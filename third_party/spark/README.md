@@ -121,3 +121,13 @@ Runtime samples with AppSW on show about 60-67 ms GPU time per frame. The HUD
 counts application frames, not synthesized compositor frames. This is the
 confirmed visual baseline before further performance experiments; no speedup
 from AppSW has been established. Raw local samples: `Builds/Pico/appsw-projection-confirmed.log`.
+
+The next motion-pass experiment traverses splats front to back for depth rejection,
+rejects packed opacities that cannot reach the existing 0.2 cutoff, and trims the
+quad to a conservative bound of that cutoff (including half-precision margin).
+The color pass and scene budget are unchanged. An internal shader uniform retains
+the reference path for validation. A 640x480 layered GPU comparison, including
+opacity threshold cases and a radius-clamped Gaussian, passed with maximum motion
+buffer error 4.18e-7 and identical coverage. Device performance remains to be
+measured; this is not a claim of higher FPS. The confirmed pre-experiment APK is
+saved locally as `VRPhoto-Pico4-AppSW-fixed-baseline.apk`.

@@ -63,8 +63,8 @@ public static class SparkNativeValidation
         target.Create();
         var pixels = new Texture2D(640, 480, TextureFormat.RGBAFloat, false);
         var material = new Material(Resources.Load<Shader>("SparkNative"));
-        using var packed = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 16);
-        using var order = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4);
+        using var packed = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 6, 16);
+        using var order = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 6, 4);
         using var quad = new GraphicsBuffer(GraphicsBuffer.Target.Index, 6, 2);
         packed.SetData(new[] { SparkSplatData.Encode(new float3(0,0,2),new float3(-2),new float4(0,0,0,1),new float4(1)) });
         order.SetData(new uint[] { 0 });
@@ -75,6 +75,8 @@ public static class SparkNativeValidation
         props.SetMatrix("_SparkPreviousFromCurrent", Matrix4x4.identity);
         props.SetVector("_SparkRenderSize", new Vector4(640,480,0,0));
         props.SetFloat("_SparkMotionY", 1);
+        props.SetFloat("_SparkMotionOptimized", 1);
+        props.SetInt("_SparkMotionCount", 1);
         // XRDepthMotionPass uses renderIntoTexture=false even for its swapchain.
         // The motion shader must not mix this with the color target's Y flip.
         Matrix4x4 projection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, false);
@@ -127,6 +129,46 @@ public static class SparkNativeValidation
                 }
             }
             Debug.Log("[SparkValidation] GPU motion: stationary full footprint, six translations, yaw and pitch passed with XR projection convention");
+            // Compare complete motion/depth-visible surfaces with the original pass.
+            // Different depths, opacity thresholds and a radius-clamped footprint
+            // exercise both front-to-back traversal and conservative quad trimming.
+            packed.SetData(new[] {
+                SparkSplatData.Encode(new float3(0,0,6),new float3(2.5f),new float4(0,0,0,1),new float4(1,1,1,.9f)),
+                SparkSplatData.Encode(new float3(.03f,.04f,4),new float3(-1,-.5f,-1),new float4(0,0,0,1),new float4(1)),
+                SparkSplatData.Encode(new float3(-.05f,.02f,3),new float3(-1),new float4(0,0,0,1),new float4(1,1,1,.3f)),
+                SparkSplatData.Encode(new float3(0,0,2),new float3(-1),new float4(0,0,0,1),new float4(1)),
+                SparkSplatData.Encode(new float3(0,0,1.5f),new float3(-2),new float4(0,0,0,1),new float4(1,1,1,.18f)),
+                SparkSplatData.Encode(new float3(.05f,.01f,1),new float3(-2),new float4(0,0,0,1),new float4(1,1,1,.205f)),
+            });
+            order.SetData(new uint[] {0,1,2,3,4,5});
+            feature.InstanceCount = 6;
+            props.SetInt("_SparkMotionCount", 6);
+            camera.transform.position = new Vector3(.1f,.1f,0);
+            Matrix4x4 oldVP = projection * camera.worldToCameraMatrix;
+            props.SetMatrixArray("_SparkPreviousVP", new[] {oldVP,oldVP});
+            camera.transform.position = Vector3.zero;
+            Color[] reference = null;
+            for (int optimized = 0; optimized <= 1; optimized++)
+            {
+                props.SetFloat("_SparkMotionOptimized", optimized);
+                RenderPipeline.SubmitRenderRequest(camera, new UniversalRenderPipeline.SingleCameraRequest {destination=dummy});
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(0,0,640,480),0,0); pixels.Apply();
+                RenderTexture.active = null;
+                var result = pixels.GetPixels();
+                if (optimized == 0) reference = result;
+                else
+                {
+                    float maxError = 0;
+                    for (int i=0;i<result.Length;i++)
+                    {
+                        Color error = result[i] - reference[i];
+                        maxError = Mathf.Max(maxError, Mathf.Abs(error.r), Mathf.Abs(error.g), Mathf.Abs(error.b), Mathf.Abs(error.a));
+                    }
+                    Check(maxError < .0001f, $"optimized motion changed reference pixels: max error={maxError}");
+                    Debug.Log($"[SparkValidation] Optimized motion matches original over {result.Length} pixels: max error={maxError}");
+                }
+            }
         }
         finally
         {
@@ -277,6 +319,7 @@ public sealed class SparkMotionValidationFeature : ScriptableRendererFeature
     public Material Material;
     public MaterialPropertyBlock Properties;
     public GraphicsBuffer Quad;
+    public int InstanceCount = 1;
     TestPass _pass;
     public override void Create() => _pass = new TestPass { Owner=this, renderPassEvent=RenderPassEvent.AfterRenderingTransparents };
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData data) => renderer.EnqueuePass(_pass);
@@ -294,7 +337,7 @@ public sealed class SparkMotionValidationFeature : ScriptableRendererFeature
             builder.SetRenderAttachmentDepth(depth,AccessFlags.Write);
             builder.AllowPassCulling(false);
             builder.SetRenderFunc(static (Data d, RasterGraphContext ctx) =>
-                ctx.cmd.DrawProcedural(d.Owner.Quad,Matrix4x4.identity,d.Owner.Material,1,MeshTopology.Triangles,6,1,d.Owner.Properties));
+                ctx.cmd.DrawProcedural(d.Owner.Quad,Matrix4x4.identity,d.Owner.Material,1,MeshTopology.Triangles,6,d.Owner.InstanceCount,d.Owner.Properties));
         }
     }
 }

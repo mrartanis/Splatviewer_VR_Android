@@ -163,6 +163,8 @@ namespace GaussianSplatting.Runtime
             _properties.SetMatrixArray("_SparkMotionProjection", projection);
             _properties.SetMatrixArray("_SparkMotionInverseVP", inverseVP);
             _properties.SetFloat("_SparkMotionY", motionY);
+            _properties.SetInt("_SparkMotionCount", _drawCount);
+            _properties.SetFloat("_SparkMotionOptimized", 1);
             _properties.SetVector("_SparkRenderSize", new Vector4(width, height, 0, 0));
             command.DrawProcedural(_quad, Matrix4x4.identity, _material, 1, MeshTopology.Triangles, 6, _drawCount, _properties);
             LastMotionFrame = Time.frameCount;

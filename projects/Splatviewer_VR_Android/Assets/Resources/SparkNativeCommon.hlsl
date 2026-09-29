@@ -13,6 +13,8 @@
             float4x4 _SparkMotionInverseVP[2];
             float4x4 _SparkPreviousFromCurrent;
             float _SparkMotionY;
+            uint _SparkMotionCount;
+            float _SparkMotionOptimized;
             #endif
             static const float MaxStdDev = 2.2360679775;
             static const float BlurAmount = 0.3;
@@ -77,9 +79,17 @@
                 #if UNITY_ANY_INSTANCING_ENABLED
                     instance = unity_InstanceID;
                 #endif
+                #if defined(SPARK_MOTION)
+                // Depth writes allow front-to-back traversal and early depth rejection.
+                if (_SparkMotionOptimized > 0.5) instance = _SparkMotionCount - 1u - instance;
+                #endif
                 uint index = _SparkOrder[instance];
                 uint4 packed = _SparkPacked[index];
                 if ((packed.x >> 24) == 0) return output;
+                #if defined(SPARK_MOTION)
+                // Blur only reduces opacity: these splats cannot pass the 0.2 cutoff.
+                if (_SparkMotionOptimized > 0.5 && (packed.x >> 24) < 51u) return output;
+                #endif
                 float3 center, scale;
                 float4 q, color;
                 Decode(packed, center, scale, q, color);
@@ -130,6 +140,17 @@
                     (a>=d ? float2(1,0) : float2(0,1));
                 float2 axis2 = float2(axis1.y,-axis1.x);
                 float2 radius = min(512.0, MaxStdDev * sqrt(float2(lambda1,lambda2)));
+                float footprintStdDev = MaxStdDev;
+                #if defined(SPARK_MOTION)
+                if (_SparkMotionOptimized > 0.5)
+                {
+                    // Bound the existing alpha-cut footprint, with a conservative margin
+                    // for half precision. Do not change the fragment cutoff or depth.
+                    float bound = sqrt(max(0.0, 2.0 * log(max(color.a + 0.0005, 0.199) / 0.199)));
+                    footprintStdDev = min(MaxStdDev, bound);
+                    radius *= footprintStdDev / MaxStdDev;
+                }
+                #endif
                 static const float2 corners[4] = {
                     float2(-1,-1), float2(1,-1), float2(1,1),
                     float2(-1,1)
@@ -145,7 +166,7 @@
                 float4 previousWorld = mul(_SparkPreviousFromCurrent, worldCorner);
                 output.previousClip = mul(_SparkPreviousVP[eye], previousWorld);
                 #endif
-                output.splatUV = corner*MaxStdDev;
+                output.splatUV = corner*footprintStdDev;
                 output.color = color;
                 return output;
             }
