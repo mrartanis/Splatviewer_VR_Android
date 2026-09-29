@@ -111,6 +111,7 @@ public class SplatCycler : MonoBehaviour
             return; // skip manual input during playback
         }
 
+        if (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsOpen) return;
         if (_files.Count == 0) return;
 
         if (XRSettings.isDeviceActive)

@@ -6,6 +6,7 @@
     "com.unity.inputsystem": "1.11.2",
     "com.unity.xr.management": "4.5.0",
     "com.unity.xr.openxr": "1.13.1",
+    "com.unity.xr.openxr.picoxr": "https://github.com/Pico-Developer/PICO-Unity-OpenXR-SDK.git#3aa3e62bff41df618529eeb60ff02c29a515dafe",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",

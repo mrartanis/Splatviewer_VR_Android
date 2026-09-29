@@ -198,6 +198,16 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.unity.xr.openxr.picoxr": {
+      "version": "https://github.com/Pico-Developer/PICO-Unity-OpenXR-SDK.git#3aa3e62bff41df618529eeb60ff02c29a515dafe",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.xr.core-utils": "2.2.0",
+        "com.unity.xr.openxr": "1.8.2"
+      },
+      "hash": "3aa3e62bff41df618529eeb60ff02c29a515dafe"
+    },
     "org.nesnausk.gaussian-splatting": {
       "version": "file:../../../package",
       "depth": 0,

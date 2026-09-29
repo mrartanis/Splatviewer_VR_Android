@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.vrphoto-cache/
+thumb-cache/
+budget-cache/
+*.key
+*.pem
+local-ca.crt
+xr-events.jsonl

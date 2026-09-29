@@ -49,7 +49,8 @@ public class VRLocomotion : MonoBehaviour
     VRFileBrowser _browser;
     VROptionsMenu _optionsMenu;
 
-    bool AnyMenuOpen => (_browser != null && _browser.IsOpen) || (_optionsMenu != null && _optionsMenu.IsOpen);
+    bool AnyMenuOpen => (_browser != null && _browser.IsOpen) || (_optionsMenu != null && _optionsMenu.IsOpen) ||
+        (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsOpen);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -161,6 +162,8 @@ public class VRLocomotion : MonoBehaviour
 
     void KeyboardMouseFallback()
     {
+        if (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsOpen)
+            return;
         if (_browser != null && (_browser.IsOpen || _browser.WasOpenThisFrame))
             return;
         if (_optionsMenu == null) _optionsMenu = FindAnyObjectByType<VROptionsMenu>();

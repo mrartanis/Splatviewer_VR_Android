@@ -28,6 +28,14 @@
 /projects/**/Temp/*
 /projects/**/UserSettings/*
 /projects/**/obj/*
+/projects/**/Builds/*
+/projects/**/vrphoto-build.log
+/projects/**/.utmp/
+/projects/**/Assets/Resources/PerformanceTestRunInfo.json*
+/projects/**/Assets/Resources/PerformanceTestRunSettings.json*
+/server/.venv/
+/server/.pytest_cache/
+/server/**/__pycache__/
 *.sln.DotSettings.user
 
 /releases/*

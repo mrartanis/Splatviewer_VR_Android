@@ -64,6 +64,7 @@ public sealed class ViewerStartup : MonoBehaviour
         if (!string.IsNullOrEmpty(_pendingFilePath))
             TryAutoLoadLaunchFile(_pendingFilePath);
 
+        EnsureVRPhotoCatalog();
         InitializeDesktopCursorState();
     }
 
@@ -74,6 +75,15 @@ public sealed class ViewerStartup : MonoBehaviour
         var go = new GameObject(nameof(VROptionsMenu));
         DontDestroyOnLoad(go);
         go.AddComponent<VROptionsMenu>();
+    }
+
+    static void EnsureVRPhotoCatalog()
+    {
+        if (FindAnyObjectByType<VRPhotoCatalog>() != null)
+            return;
+        var go = new GameObject(nameof(VRPhotoCatalog));
+        DontDestroyOnLoad(go);
+        go.AddComponent<VRPhotoCatalog>();
     }
 
     static void ApplyWindowMode()

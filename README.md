@@ -1,5 +1,43 @@
 # Splatviewer_VR
 
+## VRPhoto for Pico 4
+
+This repository also contains the native Pico 4 viewer (`projects/Splatviewer_VR_Android`)
+and its Python library server (`server`). The Android viewer uses the existing Unity
+Gaussian splat renderer. It downloads a selected SHARP PLY to the app cache and starts
+at the capture viewpoint. Full quality (100% of the splats) is the default; High,
+Medium, and Low are optional choices in the VR catalog. The original local file
+browser remains available from the catalog.
+
+Start the server on a computer reachable from the Pico over the LAN:
+
+```powershell
+cd server
+python -m pip install -e .
+vrphoto serve C:\path\to\VRLibrary --host 0.0.0.0 --port 8443
+```
+
+The server prints its HTTPS address and `Server certificate SHA-256`. In the headset,
+enter the host and port, compare the displayed fingerprint with the server log, and
+approve it. The viewer saves the approved certificate for that server address. When
+the certificate changes, the viewer stops the request and asks for explicit approval
+of the new fingerprint.
+
+Open `projects/Splatviewer_VR_Android` in Unity **6000.0.69f1** with Android Build
+Support, Android SDK/NDK Tools, and OpenJDK. The project pins the official PICO OpenXR
+package to a specific commit. Run **Tools → VRPhoto → Build Pico 4 APK** or invoke
+`BuildSetup.BuildPicoApk` in Unity batch mode. The ARM64 installable output is
+`projects/Splatviewer_VR_Android/Builds/Pico/VRPhoto-Pico4.apk` and uses Unity's
+standard debug signing unless a release keystore is configured in Player Settings.
+
+Catalog controls: left Y shows or hides the catalog; sticks move selection; either
+trigger selects; right B goes back or cancels a download. The address screen has an
+on-screen keyboard. Choose **Local files** to use the original browser.
+
+Server tests: run `python -m pytest -q tests` from `server` after installing pytest.
+
+---
+
 `Splatviewer_VR` is a VR-focused fork of the Unity Gaussian Splatting viewer. The repository keeps the reusable Unity package, a VR sample project, and packaged Windows builds for release workflows.
 
 This fork is based on [aras-p/UnityGaussianSplatting](https://github.com/aras-p/UnityGaussianSplatting) and adds a standalone VR viewer with runtime loading for Gaussian splat files.

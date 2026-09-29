@@ -207,6 +207,10 @@ public class VRFileBrowser : MonoBehaviour
         var optMenu = FindAnyObjectByType<VROptionsMenu>();
         bool optionsOpen = optMenu != null && optMenu.IsOpen;
 
+        // Y belongs to the network catalog until the user explicitly opens local files.
+        if (VRPhotoCatalog.Instance != null && (VRPhotoCatalog.Instance.IsOpen || !IsOpen))
+            return;
+
         // Toggle: left Y button or Esc/Tab key on desktop
         bool yBtn = ReadButton(XRNode.LeftHand, CommonUsages.secondaryButton);
         if (yBtn && _toggleReady && !optionsOpen) { ToggleBrowser(); _toggleReady = false; }

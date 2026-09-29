@@ -191,6 +191,8 @@ public class VROptionsMenu : MonoBehaviour
 
     void HandleToggle()
     {
+        if (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsOpen)
+            return;
         bool pressed = false;
 
         if (XRSettings.isDeviceActive)

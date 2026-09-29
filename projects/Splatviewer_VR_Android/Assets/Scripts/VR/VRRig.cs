@@ -12,7 +12,7 @@ using UnityEngine.XR;
 ///     └── CameraOffset
 ///           └── Main Camera  (tag: MainCamera)
 ///
-/// Works with Quest 3 (Meta Link / Air Link) and Virtual Desktop (SteamVR OpenXR runtime).
+/// Works with Pico 4 and other supported OpenXR runtimes.
 /// Requires: XR Plug-in Management + OpenXR provider enabled in Project Settings.
 /// </summary>
 public class VRRig : MonoBehaviour
@@ -106,6 +106,16 @@ public class VRRig : MonoBehaviour
         ApplySpawnPoint();
         AlignToRenderer(renderer);
 
+        var locomotion = GetComponent<VRLocomotion>();
+        if (locomotion != null)
+            locomotion.ResetDesktopLook();
+    }
+
+    /// <summary>Place the eye at SHARP's capture origin, facing its original optical axis.</summary>
+    public void ResetToSharpCaptureView()
+    {
+        ApplySpawnPoint();
+        transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         var locomotion = GetComponent<VRLocomotion>();
         if (locomotion != null)
             locomotion.ResetDesktopLook();
