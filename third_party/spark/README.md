@@ -131,3 +131,7 @@ opacity threshold cases and a radius-clamped Gaussian, passed with maximum motio
 buffer error 4.18e-7 and identical coverage. Device performance remains to be
 measured; this is not a claim of higher FPS. The confirmed pre-experiment APK is
 saved locally as `VRPhoto-Pico4-AppSW-fixed-baseline.apk`.
+
+After testing the optimized build, the user reported no improvement and requested
+that rendering be left as-is for release. The release retains this implementation;
+AppSW stays optional and off by default. No performance improvement is claimed.

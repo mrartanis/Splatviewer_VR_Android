@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 DEFAULTS = {
-    "sharp_path": "/Users/artanis/WORK/GIT/sharp",
+    "sharp_path": str(Path.home() / "Applications/ml-sharp"),
     "preview_max_size": 600,
     "preview_quality": 85,
     "https_host": "0.0.0.0",

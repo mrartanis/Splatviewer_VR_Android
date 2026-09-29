@@ -1,215 +1,250 @@
-# Splatviewer_VR
+# VRPhoto for Pico 4
 
-## VRPhoto for Pico 4
+View photographs as 3D Gaussian splats in a native Pico 4 app. Convert a photo with
+[Apple SHARP](https://github.com/apple-aiml-research/ml-sharp), add its PLY to the
+included Python library server, then open it from the headset.
 
-This repository also contains the native Pico 4 viewer (`projects/Splatviewer_VR_Android`)
-and its Python library server (`server`). The Android viewer uses the native Spark
-port for SHARP scenes. It downloads a selected SHARP PLY to the app cache and starts
-at the capture viewpoint. Full quality (100% of the splats) is the default; High,
-Medium, and Low are optional choices in the VR catalog. The original local file
-browser remains available from the catalog.
+The Unity app uses a native port of [Spark](https://github.com/sparkjsdev/spark)
+for SHARP scenes. Photos stay fixed in space as you move your head. Full quality
+(100% of splats) and 100% XR render resolution are the defaults. Local-file viewing
+and the server's browser viewer are also available.
 
-Photos default to 100% XR render resolution; upgrading from the older Quest
-profile resets its 80% setting once. Subsequent manual resolution choices persist.
-The catalog uses a separate 125% render scale and 4x MSAA, with six larger cards,
-centered aspect-correct thumbnails (up to 768 px) and mipmapped filtering. Leaving
-the catalog restores the photo's resolution and antialiasing settings.
+## Install on Pico 4
 
-The near clipping distance is 1 cm, matching the web viewer, so approaching a photo
-no longer clips it at the previous 30 cm distance.
+1. Download **VRPhoto-Pico4.apk** from the
+   [Pico release](https://github.com/mrartanis/Splatviewer_VR_Android/releases/tag/pico-v0.1.0).
+2. Install it using your APK sideloading tool, or ADB as below.
+3. Open **VRPhoto** from the headset's app library.
 
-Hidden settings: while viewing a photo, hold **right grip + left Y**. Use stick
-up/down to select a row and left/right to change it; repeat the shortcut to close.
-**FPS counter** toggles a small head-following overlay and remembers the choice.
-It reports application FPS averaged over half a second, the corresponding frame
-interval in milliseconds, display refresh rate, and AppSW status. Generated
-compositor frames are not counted as application frames. The overlay starts off.
+For ADB installation from a Mac with [Homebrew](https://brew.sh):
 
-**Frame generation (exp.)** enables OpenXR Application SpaceWarp for the native
-Spark path; it starts off and pauses in the catalog. Missing runtime support or
-motion targets causes an automatic fallback. This remains experimental: the Pico 4
-trial showed visible artifacts and lower application FPS, so leave it off for
-normal viewing. The switch is retained for comparison. See `third_party/spark/README.md`
-for the motion/depth approximation and on-device findings.
-
-Start the server on a computer reachable from the Pico over the LAN:
-
-```powershell
-cd server
-python -m pip install -e .
-vrphoto serve C:\path\to\VRLibrary --host 0.0.0.0 --port 8443
+```bash
+brew install --cask android-platform-tools
+adb devices
+adb install -r "$HOME/Downloads/VRPhoto-Pico4.apk"
 ```
 
-The server prints its HTTPS address and `Server certificate SHA-256`. In the headset,
-enter the host and port, compare the displayed fingerprint with the server log, and
-approve it. The viewer saves the approved certificate for that server address. When
-the certificate changes, the viewer stops the request and asks for explicit approval
-of the new fingerprint.
+Enable developer mode / USB debugging on the Pico, connect it with a data-capable
+USB cable, and accept the debugging prompt inside the headset. `adb devices` must
+show `device`, not `unauthorized`. Windows/Linux can use Google's
+[SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools).
 
-Open `projects/Splatviewer_VR_Android` in Unity **6000.0.69f1** with Android Build
-Support, Android SDK/NDK Tools, and OpenJDK. The project pins the official PICO OpenXR
-package to a specific commit. Run **Tools → VRPhoto → Build Pico 4 APK** or invoke
-`BuildSetup.BuildPicoApk` in Unity batch mode. The ARM64 installable output is
-`projects/Splatviewer_VR_Android/Builds/Pico/VRPhoto-Pico4.apk` and uses Unity's
-standard debug signing unless a release keystore is configured in Player Settings.
+The APK is ARM64, package `com.mrartanis.vrphoto.pico`, version `0.1`. This release
+uses Unity's debug signing certificate. `adb install -r` preserves settings when
+updating an installation signed with the same certificate.
 
-Catalog controls: left Y shows or hides the catalog; sticks move selection; either
-trigger selects; right B goes back or cancels a download. The address screen has an
-on-screen keyboard. Choose **Local files** to use the original browser.
+## Convert photos on a Mac
 
-Server tests: run `python -m pytest -q tests` from `server` after installing pytest.
+### 1. Install official Apple SHARP
 
----
+Use an Apple Silicon Mac for GPU inference through MPS. Keep SHARP in its own
+Python environment; the library server does not need PyTorch or model weights.
+These commands use Python 3.13, as recommended in Apple's
+[installation instructions](https://github.com/apple-aiml-research/ml-sharp#getting-started).
 
-`Splatviewer_VR` is a VR-focused fork of the Unity Gaussian Splatting viewer. The repository keeps the reusable Unity package, a VR sample project, and packaged Windows builds for release workflows.
+With Homebrew already installed:
 
-This fork is based on [aras-p/UnityGaussianSplatting](https://github.com/aras-p/UnityGaussianSplatting) and adds a standalone VR viewer with runtime loading for Gaussian splat files.
+```bash
+brew install python@3.13 git
+mkdir -p "$HOME/Applications"
+git clone https://github.com/apple-aiml-research/ml-sharp.git "$HOME/Applications/ml-sharp"
+cd "$HOME/Applications/ml-sharp"
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+sharp --help
+python -c 'import torch; print("MPS available:", torch.backends.mps.is_available())'
+```
 
-https://github.com/user-attachments/assets/4665c9fa-1f44-4b2c-a258-9eb19ebe854e
+MPS should report `True`. CPU inference is also supported by SHARP, but is slower.
+See Apple's repository for its software and model licenses and supported platforms.
 
-## What This Fork Adds
+### 2. Install VRPhoto's converter and library server
 
-- A dedicated Unity project at `projects/Splatviewer_VR`.
-- Runtime loading for splat files instead of requiring prebuilt Unity assets.
-- VR locomotion, in-scene splat manipulation, and desktop fallback controls.
-- File cycling and a world-space browser with favorites, preload control, and movie playback.
-- Windows release builds under `projects/Splatviewer_VR/Release/`.
+Open a new terminal. The server requires Python 3.11+ and works on macOS, Windows,
+and Linux. These commands use the Python 3.13 installed above:
 
-## Repository Layout
+```bash
+git clone https://github.com/mrartanis/Splatviewer_VR_Android.git
+cd Splatviewer_VR_Android
+python3.13 -m venv server/.venv
+server/.venv/bin/python -m pip install --upgrade pip
+server/.venv/bin/python -m pip install -e ./server
+server/.venv/bin/vrphoto --help
+```
 
-- `package/`: reusable Unity Gaussian Splatting package.
-- `projects/Splatviewer_VR/`: Unity project for the VR viewer.
-- `docs/`: upstream documentation for package integration and splat editing.
+On Windows, create the environment with `py -3 -m venv server\.venv` and use
+`server\.venv\Scripts\python.exe` / `server\.venv\Scripts\vrphoto.exe` instead.
+Serving an existing library does not require SHARP or a GPU.
 
-## Viewer Features
+### 3. Convert a photo tree, preserving its folders
 
-- Runtime loading of `.ply`, `.spz`, `.spx`, and bundled PlayCanvas `.sog` splat files.
-- Command-line file opening for `.ply`, `.spz`, `.spx`, and `.sog` shell associations.
-- OpenXR-based VR support.
-- Smooth locomotion with continuous turning and vertical fly movement.
-- Runtime splat rotation, reset, flip, and uniform scaling in both VR and desktop modes.
-- Controller and keyboard shortcuts for moving between splat files.
-- In-world file browser with favorites, current-file tracking, and direct folder browsing.
-- Browser preload caching with a configurable RAM budget.
-- Folder movie mode with progressive loading and adjustable playback FPS.
-- Full desktop mode when running without a headset.
-- Fullscreen windowed startup for desktop and VR mirror view.
-- IMPORTANT: put your Quest splat files here: `Quest 3\internal memory\Android\data\com.enndee.splatviewervr.android\files\Splats`
+From the repository root:
 
-## Controls
+```bash
+sh tools/convert-photos-macos.sh \
+  "$HOME/Pictures/VRPhotos" "$HOME/Pictures/VRLibrary"
+```
 
-- Left stick: move.
-- Right stick X: continuous turn.
-- Right stick Y: move up and down.
-- Right controller `B` / `secondaryButton`: next splat.
-- Right controller `A` / `primaryButton`: previous splat.
+The script calls our `vrphoto process` batch importer. **Inference uses official
+Apple SHARP**, installed separately in step 1. The importer stages photos with
+unique temporary names, calls `sharp predict --device mps` once for the batch,
+then maps the PLY files back into the original folder structure. Identical photo
+basenames in different folders are safe. The original photo files are not renamed.
 
-#### VR file browser
+For example, `VRPhotos/Holidays/beach.jpg` becomes:
 
-- Left controller `Y`: open / close browser.
-- Left or right stick: browse entries and switch pane.
-- Left or right trigger, or right controller `A`: open folder / load file.
-- Right controller `B`: go to parent folder.
-- Left stick click: add / remove favorite.
-- Left controller `X`: toggle preload caching.
-- Right stick click: start movie mode from the current folder.
-- During movie playback, left stick left / right: decrease / increase FPS.
-- During movie playback, left controller `Y`: stop movie playback.
+```text
+VRLibrary/
+  Holidays/
+    beach/
+      scene.ply
+      preview.jpg
+      metadata.json
+```
 
-#### VR splat controls
+Input can be a single file or a folder. JPG/JPEG, PNG, and WebP are supported;
+export images from Apple Photos as files first. The library must be outside the
+input tree. The PLY is copied unchanged, and each scene gets an aspect-correct
+preview with EXIF orientation plus SHARP camera/coordinate metadata.
 
-- Hold left grip + use right stick: rotate splat.
-- Hold both grips + move controllers apart / together: scale splat.
-- Hold left grip + left controller `X`: flip splat.
-- Hold left grip + right controller `A`: reset splat rotation.
+Unchanged completed photos are skipped using source size and modification time.
+Repeat the command to resume, or add `--force` to regenerate scenes. Successful
+scenes are retained if others fail. Same-stem files in the **same** folder, such
+as `photo.jpg` and `photo.png`, are rejected before inference to avoid overwriting.
 
-### Desktop fallback
+If SHARP is installed elsewhere:
 
-- `W A S D`: move.
-- Mouse: look around.
-- `SPACE / C`: move up / down.
-- `Shift`: sprint.
-- `R / F`: next / previous splat.
-- `Q / E`: rotate the current splat.
-- Mouse wheel: scale the current splat.
-- `Home`: reset splat rotation.
-- `End`: flip the current splat.
-- Hold left or right mouse button and move mouse: drag camera.
-- `Esc / Tab`: open / close file browser.
-- `Enter`: open folder / load file in browser.
-- `Backspace`: go to parent folder in browser.
-- `F`: add / remove favorite in browser.
-- `P`: toggle preload caching in browser.
-- `M`: start / stop movie mode.
-- `Left / Right`: decrease / increase movie FPS during playback.
-- `Esc`: release mouse cursor.
-- Left click: capture mouse cursor again.
+```bash
+SHARP_BIN="/path/to/ml-sharp/.venv/bin/sharp" \
+  sh tools/convert-photos-macos.sh /path/to/Photos /path/to/VRLibrary
+```
 
-## Unity Project
+The default is `$HOME/Applications/ml-sharp/.venv/bin/sharp`. `VRPHOTO_BIN` can
+override the server CLI location. Extra options go to `vrphoto process`; use
+`--preview-max-size 768` for larger previews or `--force` to rerun inference.
+The equivalent command without the shell launcher is:
 
-Open `projects/Splatviewer_VR` in Unity. The project includes `Assets/GSTestScene.unity`, and `Assets/Editor/BuildSetup.cs` ensures that scene is present in the build settings.
+```bash
+server/.venv/bin/vrphoto process /path/to/Photos /path/to/VRLibrary \
+  --sharp-path "$HOME/Applications/ml-sharp/.venv/bin/sharp"
+```
 
-Recommended environment:
+Apple SHARP downloads its checkpoint on first use and caches it in
+`~/.cache/torch/hub/checkpoints/`. This Mac batch workflow requires MPS and does
+not invoke Apple's CUDA-only video-rendering option.
 
-- Unity 6 (`6000.0.69f1`).
-- Windows.
-- D3D12-capable GPU.
-- OpenXR-compatible headset runtime.
+### Already have a PLY, or need CPU inference?
 
-## Runtime Splat Loading
+You can use Apple's CLI directly in its environment, then import the result:
 
-This fork includes runtime loading changes for the Gaussian splat package and VR-side runtime scripts.
+```bash
+"$HOME/Applications/ml-sharp/.venv/bin/sharp" predict \
+  -i /path/to/photo.jpg -o /path/to/SharpOutput --device cpu
+server/.venv/bin/vrphoto add-ply \
+  /path/to/SharpOutput/photo.ply /path/to/photo.jpg /path/to/VRLibrary
+```
 
-Highlights:
+`add-ply --name another-name` chooses a scene folder name. Reimporting that name
+replaces the library scene while retaining source files. You can also copy scene
+folders containing `scene.ply` and `preview.jpg` directly into the library.
 
-- `GaussianSplatAsset` supports runtime-provided byte buffers.
-- `GaussianSplatRenderer` uses those runtime buffers when present.
-- `RuntimeSplatLoader` reads binary little-endian PLY data at runtime.
-- Splats are reordered and uploaded in a GPU-friendly layout.
+## Connect the headset
 
-The source tree does not include sample splat data. Add your own `.ply`, `.spz`, `.spx`, or bundled `.sog` files and point the viewer to the folder you want to browse.
+Start the server and keep the terminal open:
 
-If the viewer is launched with a `.ply`, `.spz`, `.spx`, or `.sog` file path on the command line, it will automatically load that file on startup. This is the basis for Windows Explorer file associations.
+```bash
+server/.venv/bin/vrphoto serve "$HOME/Pictures/VRLibrary" --host 0.0.0.0 --port 876
+```
 
-PlayCanvas `.sog` support targets bundled `.sog` archives with WebP-backed property images as described in the PlayCanvas format specification.
+Put the computer and Pico on the same network and allow incoming connections to
+the server through the computer's firewall. In VRPhoto, enter the **HTTPS LAN
+address printed by the server**, for example `https://192.168.1.20:876`.
+`0.0.0.0` is a bind address, not the address to enter on the headset.
 
-## Windows File Association
+At first connection, compare the certificate SHA-256 fingerprint shown in the
+headset with `Server certificate SHA-256` in the server log and approve it. The
+app remembers that certificate for the address. A changed certificate requires
+explicit approval again. The native app does not require installing a CA on Pico.
 
-You can register `.ply`, `.spz`, `.spx`, and `.sog` to open with the viewer by running either the root-level release copy or the `tools/` copy:
+The server is intended for a trusted LAN and has no account authentication. Use
+HTTPS, not HTTP. Stop it with Ctrl+C.
 
-- `Register-SplatviewerFileAssociations.bat`
-- `Register-SplatviewerFileAssociations.ps1`
-- `tools/Register-SplatviewerFileAssociations.bat`
-- `tools/Register-SplatviewerFileAssociations.ps1`
+## Built-in JavaScript / WebXR viewer
 
-The helper writes per-user file associations under `HKCU\Software\Classes`, so administrator rights are not required.
+**The server has its own browser viewer**, built with Spark and Three.js. Open
+the same HTTPS server address in a desktop browser to browse the thumbnail library,
+or in Pico Browser and press **Enter VR** on a photo to view it with WebXR. The
+native APK is not required for this path. JavaScript dependencies are bundled
+with the server, so no Node.js or external CDN is required at runtime.
 
-If needed, pass a custom executable path to the PowerShell script:
+Browser WebXR requires trusted HTTPS: install/trust only the server's
+`~/.local/share/vrphoto/local-ca.crt` in the browser/device trust store. Keep private
+`.key` files on the server. This browser CA setup is separate from the native
+app's fingerprint approval. See [server/README.md](server/README.md) for browser
+controls, configuration, and diagnostics.
 
-- `Register-SplatviewerFileAssociations.ps1 -ExecutablePath "C:\Path\To\SplatViewer_VR.exe"`
-- `Register-SplatviewerFileAssociations.ps1 -Unregister`
+## Headset controls
 
-The 1.4 Windows release package includes the `.bat` and `.ps1` helpers next to `SplatViewer_VR.exe`.
+| Context | Control | Action |
+| --- | --- | --- |
+| Catalog | Stick | Move between thumbnail cards / load more entries |
+| Catalog | Either trigger | Open the selected folder or photo |
+| Catalog | B | Go back or cancel loading |
+| Photo | B or left Y | Return to the catalog at the previous position |
+| Photo | A | Load the next photo without returning to the catalog |
+| Photo | Stick forward/back | Move the photo closer/farther |
+| Photo | Hold grip and move the controller | Translate the scene, including up/down |
+| Photo | Hold right grip + press left Y | Open/close hidden settings |
+| Settings | Stick up/down, left/right | Select a setting, change its value |
 
-## Building A Release
+The address screen includes an on-screen keyboard. **Local files** opens the
+inherited browser, whose controls differ; see [upstream documentation](docs/upstream-viewer.md).
 
-The packaged Windows player is built from `projects/Splatviewer_VR/Builds/`.
+Hidden settings include **FPS counter** and **Frame generation (exp.)**. The counter
+reports application FPS (excluding generated frames), frame interval, display Hz,
+and AppSW status. Both toggles start off and persist when changed.
 
-For GitHub releases, publish a zip package generated from that build output. Release archives are written under `projects/Splatviewer_VR/Release/`. The repository ignores `projects/**/Release/` so source control stays focused on source, project config, tracked build artifacts, and documentation.
+### Current limits
 
-## Release Files
+- The native Spark path targets static SHARP binary little-endian PLY with SH degree 0.
+- The near clipping distance is 1 cm; the catalog uses 125% render scale and 4x MSAA.
+- A scene with about 1.18 million splats reached up to roughly 20 application FPS
+  without AppSW and roughly 15 with it. Results depend on the scene and viewpoint.
+- AppSW's projection artifacts were fixed and confirmed on Pico 4. It remains
+  experimental: the subsequent optimization did not improve performance in the
+  user's test. Leave it off unless comparing modes; stable 90 FPS is not claimed.
+- The APK was installed and visually tested on Pico 4. Mac instructions follow
+  Apple's CLI; full model inference was not rerun on a Mac for this release.
 
-- Release notes: `RELEASE_NOTES.md`
-- Latest GitHub release: `1.6.1`
-- Release package output pattern: `projects/Splatviewer_VR/Release/Splatviewer_VR_v<version>_Windows_x64.zip`
+## Build from source
 
-## Upstream Credits
+Open `projects/Splatviewer_VR_Android` with Unity **6000.0.69f1**, Android Build
+Support, SDK/NDK Tools, and OpenJDK. Activate your Unity license. The project pins
+the PICO OpenXR package. Use **Tools → VRPhoto → Build Pico 4 APK**, or:
 
-This work builds on the original Unity Gaussian Splatting implementation and the original 3D Gaussian Splatting research.
+```powershell
+& "C:\path\to\Unity.exe" -batchmode -quit `
+  -projectPath "$PWD\projects\Splatviewer_VR_Android" -buildTarget Android `
+  -executeMethod SparkNativeValidation.ValidateAndBuild -logFile "$PWD\build.log"
+```
 
-- Upstream package: [aras-p/UnityGaussianSplatting](https://github.com/aras-p/UnityGaussianSplatting)
-- Paper: [3D Gaussian Splatting for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)
+Output: `projects/Splatviewer_VR_Android/Builds/Pico/VRPhoto-Pico4.apk`.
+GPU validation requires a graphics device: omit `-nographics`. Checks cover packing
+against upstream Spark, eye projection, close clipping, and AppSW motion output.
+Server tests: `server/.venv/bin/python -m pytest -q server/tests` (install pytest first).
 
-## License
+## Repository and credits
 
-The repository retains the upstream MIT-licensed Unity integration code. Review the original Gaussian Splatting training software license separately if your splat assets were produced with tooling that has additional restrictions.
+- `projects/Splatviewer_VR_Android/`: native Pico app.
+- `server/`: HTTPS library API, preview generation, browser viewer, and tests.
+- `tools/convert-photos-macos.sh`: folder-preserving batch launcher using official Apple SHARP.
+- `package/`: Unity Gaussian splat integration and native Spark implementation.
+- [Native Spark port notes](third_party/spark/README.md), [release notes](RELEASE_NOTES.md).
+- [Enndee's viewer](https://github.com/Enndee/Splatviewer_VR_Android) and
+  [aras-p/UnityGaussianSplatting](https://github.com/aras-p/UnityGaussianSplatting) are the fork's foundations.
+
+The Unity integration retains its MIT license; the Spark port includes the
+[Spark MIT license](third_party/spark/LICENSE). Apple SHARP code and model weights
+are installed separately under their upstream terms and are not bundled in the APK.

@@ -291,7 +291,7 @@ def test_process_batch_and_resume(tmp_path, monkeypatch):
     input_dir, output = tmp_path / "photos", tmp_path / "library"
     (input_dir / "nested").mkdir(parents=True)
     Image.new("RGB", (200, 100), "red").save(input_dir / "one.jpg")
-    Image.new("RGB", (300, 150), "blue").save(input_dir / "nested" / "two.png")
+    Image.new("RGB", (300, 150), "blue").save(input_dir / "nested" / "one.jpg")
     calls = []
     monkeypatch.setattr("vrphoto.importer.find_sharp", lambda _: Path("/fake/sharp"))
     monkeypatch.setattr("vrphoto.importer.check_sharp", lambda _: None)
@@ -304,7 +304,8 @@ def test_process_batch_and_resume(tmp_path, monkeypatch):
     monkeypatch.setattr("vrphoto.importer.subprocess.run", fake_run)
     first = process(str(input_dir), str(output), "unused")
     assert first["processed"] == 2 and len(calls) == 1
-    assert (output / "nested/two/preview.jpg").is_file()
+    assert (output / "nested/one/preview.jpg").is_file()
+    assert (output / "one/preview.jpg").is_file()  # Same basename, distinct folders.
     second = process(str(input_dir), str(output), "unused")
     assert second["skipped"] == 2 and len(calls) == 1
 

@@ -1,5 +1,44 @@
 # Splatviewer_VR Release Notes
 
+## VRPhoto for Pico 4 v0.1.0 (`pico-v0.1.0`)
+
+First Pico-focused release of this fork. Install `VRPhoto-Pico4.apk` (ARM64,
+package `com.mrartanis.vrphoto.pico`, Android version name `0.1`).
+
+### Included
+
+- Native Spark rendering of SHARP PLYs with correct stereo projection and stable world placement.
+- Full/100% splats and 100% photo render resolution by default; 1 cm near clipping.
+- Thumbnail catalog with preserved position, progressive loading, download progress, and next-photo navigation.
+- Sharper catalog rendering, aspect-correct previews, scene translation/zoom, B to return.
+- Integrated Python HTTPS server and versioned library API with certificate fingerprint confirmation.
+- Hidden settings (right grip + left Y), FPS overlay, and optional experimental AppSW.
+- English macOS installation/conversion guide and `tools/convert-photos-macos.sh`,
+  which uses the folder-preserving batch importer with official Apple SHARP inference.
+- The server's bundled Spark + Three.js browser/WebXR viewer is documented as an
+  alternative to installing the native APK.
+
+### Conversion workflow
+
+Use `tools/convert-photos-macos.sh` or `vrphoto process` to convert a photo tree.
+The importer stages unique names for official `sharp predict`, preserves folders
+in the library and skips unchanged completed scenes. `vrphoto add-ply` imports
+existing PLYs. Apple code and model weights are installed separately.
+
+### Verification and limitations
+
+The APK was installed and visually tested on Pico 4. AppSW projection artifacts
+were fixed; the later motion-pass optimization did not improve performance in
+the user's test. One roughly 1.18M-splat scene reached up to about 20 application
+FPS without AppSW and about 15 with it. AppSW is off by default and remains
+experimental; the counter excludes generated frames. This is not a 90 FPS release.
+
+The APK retains the tested Unity debug signature. Native Spark GPU validations
+passed. Server/launcher checks are described in the repository; actual Apple
+Silicon model inference was not rerun for this release.
+
+Older sections below describe inherited upstream Windows releases.
+
 ## Version 1.4
 
 Adds runtime `.spx` support, preload caching, movie playback, lossless import naming cleanup, and runtime loading performance improvements.

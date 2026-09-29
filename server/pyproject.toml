@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vrphoto"
 version = "0.1.0"
-description = "Local SHARP photo library and PlayCanvas WebXR viewer"
+description = "Local SHARP photo library for Pico 4 and Spark WebXR"
 requires-python = ">=3.11"
 dependencies = ["aiohttp>=3.10,<4", "Pillow>=10,<12", "cryptography>=43,<47", "PyYAML>=6,<7"]
 
@@ -14,4 +14,3 @@ vrphoto = "vrphoto.cli:main"
 
 [tool.setuptools.package-data]
 vrphoto = ["static/*"]
-
