@@ -66,6 +66,10 @@ public sealed class ViewerStartup : MonoBehaviour
             TryAutoLoadLaunchFile(_pendingFilePath);
 
         EnsureVRPhotoCatalog();
+        if (FindAnyObjectByType<VRPhotoFrameGeneration>() == null)
+            gameObject.AddComponent<VRPhotoFrameGeneration>();
+        if (FindAnyObjectByType<VRPhotoPerformanceHud>() == null)
+            gameObject.AddComponent<VRPhotoPerformanceHud>();
         InitializeDesktopCursorState();
     }
 

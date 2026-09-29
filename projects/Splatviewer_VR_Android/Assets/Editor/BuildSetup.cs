@@ -103,6 +103,8 @@ public static class BuildSetup
                 feature.enabled = true;
                 picoSupport = true;
             }
+            else if (feature is VRPhotoSpaceWarpFeature)
+                feature.enabled = true;
             else if (type == "PICO4ControllerProfile")
             {
                 feature.enabled = true;

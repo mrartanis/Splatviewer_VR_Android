@@ -24,8 +24,8 @@ public class VROptionsMenu : MonoBehaviour
 {
     // ── Layout constants ──────────────────────────────────────────────────────
 
-    const int PW = 620, PH = 280;
-    const float SCALE = 0.001f;
+    const int PW = 800, PH = 340;
+    const float SCALE = 0.0013f;
     const int PAD = 14;
     const int ROW_H = 44;
     const int FONT_LABEL = 22;
@@ -58,11 +58,15 @@ public class VROptionsMenu : MonoBehaviour
         new OptionDef { label = "Render Scale",    min = 0.50f, max = 1.00f, step = 0.05f, intOnly = false },
         new OptionDef { label = "SH Order",        min = 0,     max = 3,     step = 1,     intOnly = true  },
         new OptionDef { label = "Sort Every N Frames", min = 1, max = 30,    step = 1,     intOnly = true  },
+        new OptionDef { label = "Frame generation (exp.)", min = 0, max = 1, step = 1, intOnly = true },
+        new OptionDef { label = "FPS counter", min = 0, max = 1, step = 1, intOnly = true },
     };
 
     const int OPT_RENDER_SCALE = 0;
     const int OPT_SH_ORDER     = 1;
     const int OPT_SORT_NTH     = 2;
+    const int OPT_FRAME_GEN = 3;
+    const int OPT_FPS = 4;
 
     // ── PlayerPrefs keys ──────────────────────────────────────────────────────
 
@@ -119,6 +123,7 @@ public class VROptionsMenu : MonoBehaviour
         if (!_isOpen) return;
         HandleNavigation();
         HandleAdjust();
+        UpdateRow(OPT_FRAME_GEN);
     }
 
     // ── Read / Apply ──────────────────────────────────────────────────────────
@@ -132,6 +137,8 @@ public class VROptionsMenu : MonoBehaviour
         var renderer = FindAnyObjectByType<GaussianSplatRenderer>();
         _values[OPT_SH_ORDER] = LoadSavedFloat(PrefKeySHOrder, renderer != null ? renderer.m_SHOrder : 1);
         _values[OPT_SORT_NTH] = LoadSavedFloat(PrefKeySortNth, renderer != null ? renderer.m_SortNthFrame : 12);
+        _values[OPT_FRAME_GEN] = VRPhotoFrameGeneration.Instance != null && VRPhotoFrameGeneration.Instance.Requested ? 1 : 0;
+        _values[OPT_FPS] = VRPhotoPerformanceHud.Instance != null && VRPhotoPerformanceHud.Instance.Visible ? 1 : 0;
     }
 
     void ApplyRenderScale(float value)
@@ -182,6 +189,8 @@ public class VROptionsMenu : MonoBehaviour
             case OPT_RENDER_SCALE: ApplyRenderScale(newValue); break;
             case OPT_SH_ORDER:     ApplySHOrder((int)newValue); break;
             case OPT_SORT_NTH:     ApplySortNthFrame((int)newValue); break;
+            case OPT_FRAME_GEN: VRPhotoFrameGeneration.Instance?.SetRequested(newValue > 0.5f); break;
+            case OPT_FPS: VRPhotoPerformanceHud.Instance?.SetVisible(newValue > 0.5f); break;
         }
 
         UpdateRow(optIndex);
@@ -291,7 +300,7 @@ public class VROptionsMenu : MonoBehaviour
         _root = new GameObject("VROptionsMenu");
         var canvas = _root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
-        _root.AddComponent<CanvasScaler>();
+        _root.AddComponent<CanvasScaler>().dynamicPixelsPerUnit = 3f;
 
         var crt = _root.GetComponent<RectTransform>();
         crt.sizeDelta = new Vector2(PW, PH);
@@ -321,8 +330,8 @@ public class VROptionsMenu : MonoBehaviour
         _rowBgs     = new Image[count];
         _barFills   = new Image[count];
 
-        const int labelW = 220;
-        const int valueW = 80;
+        const int labelW = 290;
+        const int valueW = 150;
         const int barH   = 10;
         int barW = PW - PAD * 2 - labelW - valueW - 24;
 
@@ -384,11 +393,13 @@ public class VROptionsMenu : MonoBehaviour
         float t = Mathf.InverseLerp(def.min, def.max, val);
 
         // Value text
-        _valueTexts[i].text = def.intOnly ? val.ToString("0") : val.ToString("0.00");
+        _valueTexts[i].text = i == OPT_FRAME_GEN ? VRPhotoFrameGeneration.Instance?.Status ?? "Off" :
+            i == OPT_FPS ? (val > 0.5f ? "On" : "Off") :
+            def.intOnly ? val.ToString("0") : val.ToString("0.00");
 
         // Bar fill width
-        const int labelW = 220;
-        const int valueW = 80;
+        const int labelW = 290;
+        const int valueW = 150;
         int barW = PW - PAD * 2 - labelW - valueW - 24;
         float barX = PAD + labelW + 8;
         int fillW = Mathf.Max(2, Mathf.RoundToInt(barW * t));

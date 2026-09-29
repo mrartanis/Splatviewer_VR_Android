@@ -20,6 +20,10 @@ namespace GaussianSplatting.Runtime
         public Bounds SceneBounds => _data?.Bounds ?? default;
         public int Count => _data?.Count ?? 0;
         public float LastSortMilliseconds { get; private set; }
+        public static bool MotionRequested { get; set; }
+        public static int LastMotionFrame { get; set; } = -1;
+        Matrix4x4 _previousModel, _currentModel;
+        int _modelFrame = -1;
         SparkSplatData _data;
         SparkSorter _sorter;
         GraphicsBuffer _packed, _order, _quad;
@@ -58,6 +62,7 @@ namespace GaussianSplatting.Runtime
             _properties.SetBuffer("_SparkOrder", _order);
             _alignOnRender = alignToHead;
             _loggedPasses = 0;
+            _modelFrame = -1;
             if (isActiveAndEnabled) Active.Add(this);
             Debug.Log($"[SparkNative] Loaded {data.Count:N0} splats; GPU scene+order {(long)data.Count*20/1048576f:F1} MiB; direct eye rendering; radial worker sort");
         }
@@ -107,6 +112,12 @@ namespace GaussianSplatting.Runtime
                 Debug.Log($"[SparkNative] Fixed capture origin={eye:F4}, forward={transform.forward:F4}");
             }
             PumpSort(camera.transform.position);
+            if (_modelFrame != Time.frameCount)
+            {
+                _previousModel = _modelFrame < 0 ? transform.localToWorldMatrix : _currentModel;
+                _currentModel = transform.localToWorldMatrix;
+                _modelFrame = Time.frameCount;
+            }
         }
 
         void PumpSort(Vector3 eye)
@@ -141,6 +152,18 @@ namespace GaussianSplatting.Runtime
         }
 
 #if GS_ENABLE_URP
+        internal void DrawMotion(RasterCommandBuffer command, int width, int height, Matrix4x4[] previousVP, float motionY)
+        {
+            if (!Visible || !MotionRequested || _drawCount == 0) return;
+            _properties.SetMatrix("_SparkLocalToWorld", transform.localToWorldMatrix);
+            _properties.SetMatrix("_SparkPreviousFromCurrent", _previousModel * transform.worldToLocalMatrix);
+            _properties.SetMatrixArray("_SparkPreviousVP", previousVP);
+            _properties.SetFloat("_SparkMotionY", motionY);
+            _properties.SetVector("_SparkRenderSize", new Vector4(width, height, 0, 0));
+            command.DrawProcedural(_quad, Matrix4x4.identity, _material, 1, MeshTopology.Triangles, 6, _drawCount, _properties);
+            LastMotionFrame = Time.frameCount;
+        }
+
         internal void Draw(RasterCommandBuffer command, int width, int height, int eyePass)
         {
             if (!Visible || _drawCount == 0) return;

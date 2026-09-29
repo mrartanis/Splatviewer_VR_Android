@@ -268,6 +268,7 @@ public sealed class VRPhotoCatalog : MonoBehaviour
 
     void HandleSceneControls()
     {
+        if (_optionsMenu != null && _optionsMenu.IsOpen) return;
         bool next = XRSettings.isDeviceActive
             ? Button(XRNode.RightHand, CommonUsages.primaryButton)
             : Input.GetKey(KeyCode.N);

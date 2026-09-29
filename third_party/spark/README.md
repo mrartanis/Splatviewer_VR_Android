@@ -78,3 +78,29 @@ with the packed path; GPU time was about 49.74 ms versus 37.94 ms. The extra
 buffer and experimental shader branch were removed; the shipped APK uses the
 validated packed baseline. Raw measurements remain in the local build output
 `Builds/Pico/spark-covariance-benchmark.json`.
+
+## Experimental Application SpaceWarp
+
+The optional `VRPhotoSpaceWarpFeature` requests `XR_FB_space_warp`. The controller
+switches to single-pass rendering while AppSW is enabled and a Spark scene is
+visible; normal rendering uses the original multipass mode. A URP render-graph
+pass writes the runtime's depth/motion attachments. The native UnityOpenXR calls
+return an XrResult integer, with zero indicating success. A watchdog disables the
+mode if usable XR motion targets do not appear.
+
+`SparkNativeCommon.hlsl` shares the Gaussian projection between color and motion
+passes. Motion uses previous eye view-projection and object transforms. Depth is
+an approximation: the closest Gaussian billboard with alpha >= 0.2 writes depth.
+This does not represent all transparent layers, and can create reprojection
+artifacts. AppSW is disabled by default and explicitly labeled experimental.
+
+Additional GPU validation passed on 2026-09-29: splats at 20 cm and 2 cm remain
+visible with the 1 cm near plane; splats at 5 mm and behind the camera clip;
+the motion pass matches stationary and both horizontal camera-translation cases.
+
+Pico 4 reported runtime extension support and `AppSW=on` during the user's trial.
+Application FPS was initially about 15 and dropped further, with GPU time around
+66.8 ms; after disabling it the photo ran around 18-20 FPS. These are observations
+from an interactive session, not a controlled benchmark. The user reported strong
+artifacts when looking at the photo, fewer when looking down, and no clear gain
+in smoothness. AppSW is therefore not recommended for normal viewing yet.

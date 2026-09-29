@@ -5,6 +5,8 @@ using System.Text;
 using GaussianSplatting.Runtime;
 using Unity.Mathematics;
 using UnityEditor.SceneManagement;
+using UnityEditor;
+using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -45,7 +47,71 @@ public static class SparkNativeValidation
         for (int i=0;i<4;i++) Check(sort.Order[i]==expected[i],"radial sort changed under rigid transform/reflection");
         ValidatePly();
         ValidateGpuProjection();
+        ValidateMotionShader();
         Debug.Log("[SparkValidation] All native Spark validation passed");
+    }
+
+    static void ValidateMotionShader()
+    {
+        var camera = new GameObject("Motion validation camera").AddComponent<Camera>();
+        camera.enabled = false;
+        camera.nearClipPlane = 0.01f;
+        camera.farClipPlane = 100;
+        camera.fieldOfView = 70;
+        camera.aspect = 4f / 3f;
+        var target = new RenderTexture(640, 480, 0, RenderTextureFormat.ARGBFloat);
+        target.Create();
+        var pixels = new Texture2D(1, 1, TextureFormat.RGBAFloat, false);
+        var material = new Material(Resources.Load<Shader>("SparkNative"));
+        using var packed = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 16);
+        using var order = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4);
+        using var quad = new GraphicsBuffer(GraphicsBuffer.Target.Index, 6, 2);
+        packed.SetData(new[] { SparkSplatData.Encode(new float3(0,0,2),new float3(-2),new float4(0,0,0,1),new float4(1)) });
+        order.SetData(new uint[] { 0 });
+        quad.SetData(new ushort[] { 0,1,2,0,2,3 });
+        var props = new MaterialPropertyBlock();
+        props.SetBuffer("_SparkPacked", packed); props.SetBuffer("_SparkOrder", order);
+        props.SetMatrix("_SparkLocalToWorld", Matrix4x4.identity);
+        props.SetMatrix("_SparkPreviousFromCurrent", Matrix4x4.identity);
+        props.SetVector("_SparkRenderSize", new Vector4(640,480,0,0));
+        props.SetFloat("_SparkMotionY", 1);
+        Matrix4x4 projection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, true);
+        var rendererData = AssetDatabase.LoadAssetAtPath<UniversalRendererData>("Assets/Settings/Medium_PipelineAsset_ForwardRenderer.asset");
+        var feature = ScriptableObject.CreateInstance<SparkMotionValidationFeature>();
+        feature.Material = material; feature.Properties = props; feature.Quad = quad;
+        feature.Target = RTHandles.Alloc(target);
+        rendererData.rendererFeatures.Add(feature); rendererData.SetDirty();
+        var dummy = new RenderTexture(640,480,24); dummy.Create();
+        try
+        {
+            foreach (float oldCameraX in new[] { 0f, 0.1f, -0.1f })
+            {
+                camera.transform.position = new Vector3(oldCameraX,0,0);
+                Matrix4x4 previousVP = projection * camera.worldToCameraMatrix;
+                props.SetMatrixArray("_SparkPreviousVP", new[] { previousVP, previousVP });
+                camera.transform.position = Vector3.zero;
+                RenderPipeline.SubmitRenderRequest(camera, new UniversalRenderPipeline.SingleCameraRequest { destination=dummy });
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(320,240,1,1),0,0); pixels.Apply();
+                RenderTexture.active = null;
+                Color motion = pixels.GetPixel(0,0);
+                float expected = projection.m00 * oldCameraX / 2;
+                Check(Mathf.Abs(motion.r-expected)<0.002f && Mathf.Abs(motion.g)<0.002f && Mathf.Abs(motion.b)<0.002f,
+                    $"motion vector sign/magnitude: {motion} != {expected}");
+            }
+            Debug.Log("[SparkValidation] GPU motion pass: stationary and both camera translation directions passed");
+        }
+        finally
+        {
+            rendererData.rendererFeatures.Remove(feature); rendererData.SetDirty();
+            feature.Target.Release();
+            UnityEngine.Object.DestroyImmediate(feature);
+            dummy.Release(); UnityEngine.Object.DestroyImmediate(dummy);
+            UnityEngine.Object.DestroyImmediate(camera.gameObject);
+            UnityEngine.Object.DestroyImmediate(material);
+            UnityEngine.Object.DestroyImmediate(pixels);
+            target.Release(); UnityEngine.Object.DestroyImmediate(target);
+        }
     }
 
     static void ValidatePly()
@@ -130,6 +196,22 @@ public static class SparkNativeValidation
                 Check(Math.Abs(dx)<1.5 && Math.Abs(dy)<1.5,$"GPU world projection yaw={yaw},eye={eye}: error=({dx:F3},{dy:F3}) px");
                 Debug.Log($"[SparkValidation] GPU yaw={yaw}, eye={eye}, center error=({dx:F3},{dy:F3}) px");
             }
+            // Regression: the scene used to cut off everything within 30 cm.
+            // Match the web viewer's 1 cm near plane, and retain real near clipping.
+            camera.ResetProjectionMatrix();
+            Vector3 worldCenter = sceneObject.transform.TransformPoint(center);
+            foreach (float distance in new[] { 0.2f, 0.02f, 0.005f, -0.02f })
+            {
+                camera.transform.SetPositionAndRotation(worldCenter - Vector3.forward * distance, Quaternion.identity);
+                RenderPipeline.SubmitRenderRequest(camera, new UniversalRenderPipeline.SingleCameraRequest { destination=target });
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(0,0,640,480),0,0); pixels.Apply();
+                RenderTexture.active = null;
+                long sum = 0;
+                foreach (var pixel in pixels.GetPixels32()) sum += pixel.r;
+                Check(distance > 0.01f ? sum > 100 : sum == 0, $"near clipping at {distance}m failed: {sum}");
+            }
+            Debug.Log("[SparkValidation] Close-up visible at 20cm and 2cm, clipped below 1cm and behind camera");
             string[] args = Environment.GetCommandLineArgs();
             int plyArgument = Array.IndexOf(args,"-sparkPly");
             if (plyArgument >= 0 && plyArgument+1 < args.Length)
@@ -157,6 +239,35 @@ public static class SparkNativeValidation
             UnityEngine.Object.DestroyImmediate(cameraObject);
             UnityEngine.Object.DestroyImmediate(pixels);
             target.Release(); UnityEngine.Object.DestroyImmediate(target);
+        }
+    }
+}
+
+// Run the real motion shader through URP's camera constant buffers, as on device.
+public sealed class SparkMotionValidationFeature : ScriptableRendererFeature
+{
+    public RTHandle Target;
+    public Material Material;
+    public MaterialPropertyBlock Properties;
+    public GraphicsBuffer Quad;
+    TestPass _pass;
+    public override void Create() => _pass = new TestPass { Owner=this, renderPassEvent=RenderPassEvent.AfterRenderingTransparents };
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData data) => renderer.EnqueuePass(_pass);
+    sealed class TestPass : ScriptableRenderPass
+    {
+        public SparkMotionValidationFeature Owner;
+        sealed class Data { public SparkMotionValidationFeature Owner; }
+        public override void RecordRenderGraph(RenderGraph graph, ContextContainer frameData)
+        {
+            var color = graph.ImportTexture(Owner.Target, new ImportResourceParams { clearOnFirstUse=true, clearColor=Color.clear });
+            var depth = graph.CreateTexture(new TextureDesc(640,480) { depthBufferBits=DepthBits.Depth24, clearBuffer=true, name="Motion validation depth" });
+            using var builder = graph.AddRasterRenderPass<Data>("Motion validation", out var data);
+            data.Owner=Owner;
+            builder.SetRenderAttachment(color,0,AccessFlags.Write);
+            builder.SetRenderAttachmentDepth(depth,AccessFlags.Write);
+            builder.AllowPassCulling(false);
+            builder.SetRenderFunc(static (Data d, RasterGraphContext ctx) =>
+                ctx.cmd.DrawProcedural(d.Owner.Quad,Matrix4x4.identity,d.Owner.Material,1,MeshTopology.Triangles,6,1,d.Owner.Properties));
         }
     }
 }

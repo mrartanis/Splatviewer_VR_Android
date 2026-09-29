@@ -3,8 +3,8 @@
 ## VRPhoto for Pico 4
 
 This repository also contains the native Pico 4 viewer (`projects/Splatviewer_VR_Android`)
-and its Python library server (`server`). The Android viewer uses the existing Unity
-Gaussian splat renderer. It downloads a selected SHARP PLY to the app cache and starts
+and its Python library server (`server`). The Android viewer uses the native Spark
+port for SHARP scenes. It downloads a selected SHARP PLY to the app cache and starts
 at the capture viewpoint. Full quality (100% of the splats) is the default; High,
 Medium, and Low are optional choices in the VR catalog. The original local file
 browser remains available from the catalog.
@@ -14,6 +14,23 @@ profile resets its 80% setting once. Subsequent manual resolution choices persis
 The catalog uses a separate 125% render scale and 4x MSAA, with six larger cards,
 centered aspect-correct thumbnails (up to 768 px) and mipmapped filtering. Leaving
 the catalog restores the photo's resolution and antialiasing settings.
+
+The near clipping distance is 1 cm, matching the web viewer, so approaching a photo
+no longer clips it at the previous 30 cm distance.
+
+Hidden settings: while viewing a photo, hold **right grip + left Y**. Use stick
+up/down to select a row and left/right to change it; repeat the shortcut to close.
+**FPS counter** toggles a small head-following overlay and remembers the choice.
+It reports application FPS averaged over half a second, the corresponding frame
+interval in milliseconds, display refresh rate, and AppSW status. Generated
+compositor frames are not counted as application frames. The overlay starts off.
+
+**Frame generation (exp.)** enables OpenXR Application SpaceWarp for the native
+Spark path; it starts off and pauses in the catalog. Missing runtime support or
+motion targets causes an automatic fallback. This remains experimental: the Pico 4
+trial showed visible artifacts and lower application FPS, so leave it off for
+normal viewing. The switch is retained for comparison. See `third_party/spark/README.md`
+for the motion/depth approximation and on-device findings.
 
 Start the server on a computer reachable from the Pico over the LAN:
 

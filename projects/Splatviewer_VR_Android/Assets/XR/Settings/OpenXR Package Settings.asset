@@ -364,6 +364,26 @@ MonoBehaviour:
   company: PICO
   priority: 0
   required: 0
+--- !u!114 &-2830305593376315185
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b613b0da81fc7b443adf1d48f8aa70e4, type: 3}
+  m_Name: VRPhotoSpaceWarpFeature Android
+  m_EditorClassIdentifier:
+  m_enabled: 1
+  nameUi: VRPhoto experimental SpaceWarp
+  version: 1.0.0
+  featureIdInternal: com.mrartanis.vrphoto.spacewarp
+  openxrExtensionStrings: XR_FB_space_warp
+  company: VRPhoto
+  priority: 0
+  required: 0
 --- !u!114 &-2774422724875710184
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1155,6 +1175,7 @@ MonoBehaviour:
   - {fileID: 4147554286446065542}
   - {fileID: -2866721910378914154}
   - {fileID: 7209461281812710502}
+  - {fileID: -2830305593376315185}
   - {fileID: 7168474113527812824}
   m_renderMode: 0
   m_autoColorSubmissionMode: 1

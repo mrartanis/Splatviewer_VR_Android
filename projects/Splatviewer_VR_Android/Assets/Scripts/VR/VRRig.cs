@@ -39,6 +39,7 @@ public class VRRig : MonoBehaviour
     void Awake()
     {
         AutoResolveReferences();
+        if (xrCamera != null) xrCamera.nearClipPlane = 0.01f;
         ApplySpawnPoint();
         ApplyCameraOffset();
     }
