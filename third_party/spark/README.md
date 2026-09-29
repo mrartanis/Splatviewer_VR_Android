@@ -112,6 +112,12 @@ in the desktop test exposed nonzero vertical motion even for a stationary camera
 The pass now uses explicit per-eye view/projection/inverse matrices throughout,
 following URP's XRDepthMotionPass, independently of color-target globals. GPU
 checks cover zero motion over the entire Gaussian footprint, translations along
-all three axes in both directions, and yaw/pitch turns. These pass; improvement
-in the Pico artifacts still requires the user's follow-up test. The original
+all three axes in both directions, and yaw/pitch turns. These pass. The original
 color projection and 100% splat budget are unchanged.
+
+The user confirmed on Pico 4 that the artifacts disappeared after commit `39b2a85`.
+Application FPS remains at most about 15 with AppSW versus up to 20 without it.
+Runtime samples with AppSW on show about 60-67 ms GPU time per frame. The HUD
+counts application frames, not synthesized compositor frames. This is the
+confirmed visual baseline before further performance experiments; no speedup
+from AppSW has been established. Raw local samples: `Builds/Pico/appsw-projection-confirmed.log`.
