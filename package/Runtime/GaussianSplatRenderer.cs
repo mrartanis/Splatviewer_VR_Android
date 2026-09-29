@@ -79,7 +79,8 @@ namespace GaussianSplatting.Runtime
             foreach (var kvp in m_Splats)
             {
                 var gs = kvp.Key;
-                if (gs == null || !gs.isActiveAndEnabled || !gs.HasValidAsset || !gs.HasValidRenderSetup)
+                if (gs == null || !gs.isActiveAndEnabled || gs.m_SuspendRendering ||
+                    !gs.HasValidAsset || !gs.HasValidRenderSetup)
                     continue;
                 m_ActiveSplats.Add((kvp.Key, kvp.Value));
             }
@@ -105,7 +106,8 @@ namespace GaussianSplatting.Runtime
         }
 
         // ReSharper disable once MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
-        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb)
+        public Material SortAndRenderSplats(Camera cam, CommandBuffer cmb, int renderWidth = 0, int renderHeight = 0,
+            Matrix4x4? eyeView = null, Matrix4x4? eyeProjection = null)
         {
             Material matComposite = null;
             foreach (var kvp in m_ActiveSplats)
@@ -148,6 +150,8 @@ namespace GaussianSplatting.Runtime
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatSize, gs.m_PointDisplaySize);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatClipThreshold, gs.m_AlphaClipThreshold);
                 mpb.SetFloat(GaussianSplatRenderer.Props.SplatEdgeSharpness, gs.m_SplatEdgeSharpness);
+                mpb.SetVector("_SplatRenderSize", new Vector4(renderWidth > 0 ? renderWidth : cam.pixelWidth,
+                    renderHeight > 0 ? renderHeight : cam.pixelHeight, 0, 0));
                 mpb.SetInteger(GaussianSplatRenderer.Props.SplatOpaqueMode, gs.m_UseOpaqueRenderHack ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, gs.m_SHOnly ? 1 : 0);
@@ -155,7 +159,7 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
-                gs.CalcViewData(cmb, cam);
+                gs.CalcViewData(cmb, cam, renderWidth, renderHeight, eyeView, eyeProjection);
                 cmb.EndSample(s_ProfCalcView);
 
                 // draw
@@ -252,6 +256,7 @@ namespace GaussianSplatting.Runtime
         public int m_SortNthFrame = 1;
         [Tooltip("Controls when splat sorting is updated. Threshold-based sorting is much cheaper in VR when the viewer mostly stands in place.")]
         public SortMode m_SortMode = SortMode.EveryNthFrame;
+        [NonSerialized] public bool m_SuspendRendering;
         [Range(0.0f, 0.5f)] [Tooltip("Re-sort once the camera moved farther than this world-space distance.")]
         public float m_SortPositionThreshold = 0.03f;
         [Range(0.0f, 45.0f)] [Tooltip("Re-sort once the view direction rotated more than this angle in degrees.")]
@@ -354,9 +359,11 @@ namespace GaussianSplatting.Runtime
             public static readonly int DstBuffer = Shader.PropertyToID("_DstBuffer");
             public static readonly int BufferSize = Shader.PropertyToID("_BufferSize");
             public static readonly int MatrixMV = Shader.PropertyToID("_MatrixMV");
+            public static readonly int MatrixP = Shader.PropertyToID("_MatrixP");
             public static readonly int MatrixObjectToWorld = Shader.PropertyToID("_MatrixObjectToWorld");
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
+            public static readonly int SplatMaxProjectedRadius = Shader.PropertyToID("_SplatMaxProjectedRadius");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int CameraNearPlane = Shader.PropertyToID("_CameraNearPlane");
             public static readonly int CameraTargetTexture = Shader.PropertyToID("_CameraTargetTexture");
@@ -492,6 +499,8 @@ namespace GaussianSplatting.Runtime
 
         public void EnsureMaterials()
         {
+            if (m_MatSplats != null && m_ShaderSplats != null && m_MatSplats.shader != m_ShaderSplats)
+                m_MatSplats.shader = m_ShaderSplats;
             if (m_MatSplats == null && resourcesAreSetUp)
             {
                 m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
@@ -663,29 +672,35 @@ namespace GaussianSplatting.Runtime
                 ++m_FramesSinceLastSort;
         }
 
-        internal void CalcViewData(CommandBuffer cmb, Camera cam)
+        internal void CalcViewData(CommandBuffer cmb, Camera cam, int renderWidth = 0, int renderHeight = 0,
+            Matrix4x4? eyeView = null, Matrix4x4? eyeProjection = null)
         {
             if (cam.cameraType == CameraType.Preview)
                 return;
 
             var tr = transform;
 
-            Matrix4x4 matView = cam.worldToCameraMatrix;
+            Matrix4x4 matView = eyeView ?? cam.worldToCameraMatrix;
+            Matrix4x4 matProjection = eyeProjection ?? GL.GetGPUProjectionMatrix(cam.projectionMatrix, true);
             Matrix4x4 matO2W = tr.localToWorldMatrix;
             Matrix4x4 matW2O = tr.worldToLocalMatrix;
             int screenW = cam.pixelWidth, screenH = cam.pixelHeight;
             int eyeW = XRSettings.eyeTextureWidth, eyeH = XRSettings.eyeTextureHeight;
-            Vector4 screenPar = new Vector4(eyeW != 0 ? eyeW : screenW, eyeH != 0 ? eyeH : screenH, 0, 0);
-            Vector4 camPos = cam.transform.position;
+            Vector4 screenPar = new Vector4(renderWidth > 0 ? renderWidth : eyeW != 0 ? eyeW : screenW,
+                renderHeight > 0 ? renderHeight : eyeH != 0 ? eyeH : screenH, 0, 0);
+            Vector4 camPos = matView.inverse.GetColumn(3);
 
             // calculate view dependent data for each splat
             SetAssetDataOnCS(cmb, KernelIndices.CalcViewData);
 
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixMV, matView * matO2W);
+            cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixP, matProjection);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, matO2W);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, matW2O);
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecScreenParams, screenPar);
+            cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatMaxProjectedRadius,
+                Application.isMobilePlatform ? 64f : 4096f);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.VecWorldSpaceCameraPos, camPos);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.CameraNearPlane, cam.nearClipPlane);
             cmb.SetComputeFloatParam(m_CSSplatUtilities, Props.SplatScale, m_SplatScale);
@@ -729,6 +744,8 @@ namespace GaussianSplatting.Runtime
             var curHash = m_Asset ? m_Asset.dataHash : new Hash128();
             if (m_PrevAsset != m_Asset || m_PrevHash != curHash)
             {
+                m_HasLastSortPose = false;
+                m_FrameCounter = 0;
                 m_PrevAsset = m_Asset;
                 m_PrevHash = curHash;
                 if (resourcesAreSetUp)

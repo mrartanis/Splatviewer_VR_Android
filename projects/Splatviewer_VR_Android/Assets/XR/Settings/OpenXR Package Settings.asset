@@ -436,7 +436,7 @@ MonoBehaviour:
   - {fileID: 7122864493446436451}
   - {fileID: 2229156871797983726}
   - {fileID: -6448780056988398396}
-  m_renderMode: 1
+  m_renderMode: 0
   m_autoColorSubmissionMode: 1
   m_colorSubmissionModes:
     m_List: 00000000
@@ -1156,7 +1156,7 @@ MonoBehaviour:
   - {fileID: -2866721910378914154}
   - {fileID: 7209461281812710502}
   - {fileID: 7168474113527812824}
-  m_renderMode: 2
+  m_renderMode: 0
   m_autoColorSubmissionMode: 1
   m_colorSubmissionModes:
     m_List: 00000000
@@ -1296,7 +1296,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6a75d1f5ff90154ea2a8e58222a1f59, type: 3}
   m_Name: FoveatedRenderingFeature Android
   m_EditorClassIdentifier: 
-  m_enabled: 1
+  m_enabled: 0
   nameUi: Foveated Rendering
   version: 1
   featureIdInternal: com.unity.openxr.feature.foveatedrendering

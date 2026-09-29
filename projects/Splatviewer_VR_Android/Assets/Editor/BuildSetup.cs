@@ -89,6 +89,10 @@ public static class BuildSetup
         var settings = OpenXRSettings.GetSettingsForBuildTargetGroup(BuildTargetGroup.Android);
         if (settings == null)
             throw new BuildFailedException("Android OpenXR settings are missing");
+        // The native splat renderer computes camera-space splats once per render pass.
+        // Single-pass instancing would send that projection to both eyes.
+        settings.renderMode = OpenXRSettings.RenderMode.MultiPass;
+        EditorUtility.SetDirty(settings);
         bool picoSupport = false;
         bool picoController = false;
         foreach (var feature in settings.GetFeatures<OpenXRFeature>())
@@ -104,7 +108,8 @@ public static class BuildSetup
                 feature.enabled = true;
                 picoController = true;
             }
-            else if (feature is OpenXRInteractionFeature || type.Contains("Quest") || type.Contains("Oculus"))
+            else if (feature is OpenXRInteractionFeature || type.Contains("Quest") ||
+                     type.Contains("Oculus") || type == "FoveatedRenderingFeature")
                 feature.enabled = false;
             EditorUtility.SetDirty(feature);
         }

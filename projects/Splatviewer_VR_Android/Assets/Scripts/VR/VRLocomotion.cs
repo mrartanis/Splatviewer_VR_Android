@@ -110,7 +110,7 @@ public class VRLocomotion : MonoBehaviour
     void VRMove()
     {
         if (_optionsMenu == null) _optionsMenu = FindAnyObjectByType<VROptionsMenu>();
-        if (AnyMenuOpen) return;
+        if (AnyMenuOpen || (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsServerSceneActive)) return;
 
         Vector2 leftStick = ReadStick(XRNode.LeftHand);
         if (leftStick.magnitude <= stickDeadzone)
@@ -138,7 +138,7 @@ public class VRLocomotion : MonoBehaviour
     void VRSnapTurn()
     {
         // Right stick is used by file browser / options menu when open
-        if (AnyMenuOpen) return;
+        if (AnyMenuOpen || (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsServerSceneActive)) return;
 
         Vector2 rightStick = ReadStick(XRNode.RightHand);
 

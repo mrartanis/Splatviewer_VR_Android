@@ -30,6 +30,7 @@
 /projects/**/obj/*
 /projects/**/Builds/*
 /projects/**/vrphoto-build.log
+/projects/**/spark-build.log
 /projects/**/.utmp/
 /projects/**/Assets/Resources/PerformanceTestRunInfo.json*
 /projects/**/Assets/Resources/PerformanceTestRunSettings.json*

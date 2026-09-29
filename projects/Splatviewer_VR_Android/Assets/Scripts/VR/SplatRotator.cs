@@ -62,7 +62,8 @@ public class SplatRotator : MonoBehaviour
 
     void VRRotate()
     {
-        if (VRPhotoCatalog.Instance != null && VRPhotoCatalog.Instance.IsOpen) return;
+        if (VRPhotoCatalog.Instance != null &&
+            (VRPhotoCatalog.Instance.IsOpen || VRPhotoCatalog.Instance.IsServerSceneActive)) return;
         if (_browser != null && _browser.IsOpen) return;
 
         // Require left grip held as a "modifier" to avoid clashing with locomotion

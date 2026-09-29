@@ -129,7 +129,7 @@ public sealed class ViewerStartup : MonoBehaviour
 
         if (renderers.Length > 0)
         {
-            Debug.Log($"[ViewerStartup] Applied Quest splat overrides to {renderers.Length} renderer(s): sort={QuestSortMode}, nthFrame={QuestSortNthFrame}, posThreshold={QuestSortPositionThreshold:0.000}, angleThreshold={QuestSortAngleThreshold:0.0}, alphaClip={QuestAlphaClipThreshold:0.00}, edgeSharpness={QuestSplatEdgeSharpness:0.0}, opaqueHack={QuestUseOpaqueSplatHack}");
+            Debug.Log($"[ViewerStartup] Applied local-file renderer overrides to {renderers.Length} renderer(s)");
         }
     }
 

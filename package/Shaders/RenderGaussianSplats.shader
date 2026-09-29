@@ -8,6 +8,7 @@ Shader "Gaussian Splatting/Render Splats"
         Pass
         {
             ZWrite Off
+            ZTest Always
             Blend OneMinusDstAlpha One
             Cull Off
             
@@ -33,6 +34,7 @@ ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
 float _SplatClipThreshold;
 float _SplatEdgeSharpness;
+float4 _SplatRenderSize;
 int _SplatOpaqueMode;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -59,7 +61,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		o.pos = quadPos;
 
-		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _ScreenParams.xy;
+		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _SplatRenderSize.xy;
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;
 

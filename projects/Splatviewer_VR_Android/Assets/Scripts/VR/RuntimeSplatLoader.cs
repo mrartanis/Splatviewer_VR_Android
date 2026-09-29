@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using GaussianSplatting.Runtime;
 using Unity.Mathematics;
@@ -31,6 +32,41 @@ public class RuntimeSplatLoader : MonoBehaviour
     long _preloadBudgetBytes;
 
     public string CurrentFilePath => _currentFilePath;
+    public SparkSplatRenderer NativeSpark { get; private set; }
+
+    public async Task<bool> LoadSharpFileAsync(string filePath, CancellationToken cancellation)
+    {
+        try
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var prepared = await Task.Run(() =>
+            {
+                var data = SparkSplatData.ReadPly(filePath, cancellation);
+                var sorter = new SparkSorter(data.Count);
+                sorter.Sort(data.Centers, Matrix4x4.identity, Vector3.zero, cancellation);
+                return (data, sorter);
+            }, cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            if (this == null || targetRenderer == null) return false;
+            if (NativeSpark == null)
+                NativeSpark = targetRenderer.gameObject.GetComponent<SparkSplatRenderer>() ??
+                    targetRenderer.gameObject.AddComponent<SparkSplatRenderer>();
+            NativeSpark.visibilityOwner = targetRenderer;
+            NativeSpark.SetScene(prepared.data, prepared.sorter, Resources.Load<Shader>("SparkNative"));
+            // OnDisable releases all legacy GPU resources. Keep its transform and
+            // menu visibility flag for the existing controls and local-file UI.
+            targetRenderer.m_SuspendRendering = true;
+            targetRenderer.enabled = false;
+            targetRenderer.m_Asset = null;
+            if (_currentAsset != null && !IsCachedAsset(_currentFilePath, _currentAsset)) Destroy(_currentAsset);
+            _currentAsset = null;
+            _currentFilePath = filePath;
+            Debug.Log($"[SparkNative] PLY decode, pack and initial sort: {timer.ElapsedMilliseconds} ms");
+            return true;
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception error) { Debug.LogError($"[SparkNative] Load failed: {error}"); return false; }
+    }
 
     /// <summary>Total bytes currently used by preloaded assets in RAM.</summary>
     public long PreloadCachedBytes { get { lock (_preloadLock) return _preloadCachedBytes; } }
@@ -699,6 +735,8 @@ public class RuntimeSplatLoader : MonoBehaviour
 
     void AssignCurrentAsset(string filePath, GaussianSplatAsset asset)
     {
+        NativeSpark?.Clear();
+        targetRenderer.enabled = true;
         if (_currentAsset != null && !ReferenceEquals(_currentAsset, asset) && !IsCachedAsset(_currentFilePath, _currentAsset))
             Destroy(_currentAsset);
 

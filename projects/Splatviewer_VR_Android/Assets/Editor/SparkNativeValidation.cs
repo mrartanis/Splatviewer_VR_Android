@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: MIT
+using System;
+using System.IO;
+using System.Text;
+using GaussianSplatting.Runtime;
+using Unity.Mathematics;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+
+public static class SparkNativeValidation
+{
+    [Serializable] class Cases { public Case[] cases; }
+    [Serializable] class Case { public float[] center, logScale, quaternion, rgba; public uint[] packed; }
+    static float3 V3(float[] a) => new float3(a[0], a[1], a[2]);
+    static float4 V4(float[] a) => new float4(a[0], a[1], a[2], a[3]);
+    static void Check(bool ok, string message) { if (!ok) throw new Exception("Spark validation: " + message); }
+
+    public static void ValidateAndBuild()
+    {
+        Run();
+        BuildSetup.BuildPicoApk();
+    }
+
+    public static void Run()
+    {
+        string root = Path.GetFullPath(Path.Combine(Application.dataPath, "../../.."));
+        var vectors = JsonUtility.FromJson<Cases>(File.ReadAllText(Path.Combine(root,"third_party/spark/encoding-vectors.json")));
+        for (int i=0; i<vectors.cases.Length; i++)
+        {
+            var v = vectors.cases[i];
+            uint4 encoded = SparkSplatData.Encode(V3(v.center), V3(v.logScale), V4(v.quaternion), V4(v.rgba));
+            for (int word=0; word<4; word++)
+                Check(encoded[word] == v.packed[word], $"upstream packing case {i}, word {word}: {encoded[word]:x8} != {v.packed[word]:x8}");
+        }
+        Debug.Log($"[SparkValidation] {vectors.cases.Length} upstream JS packing vectors passed");
+
+        var centers = new[] { new float3(1,0,0), new float3(0,-3,0), new float3(0,0,2), new float3(-3,0,0) };
+        var sort = new SparkSorter(centers.Length);
+        Check(sort.Sort(centers, Matrix4x4.identity, Vector3.zero)==4,"sort dropped points");
+        uint[] expected = {1,3,2,0};
+        for (int i=0;i<4;i++) Check(sort.Order[i]==expected[i],"radial ordering or stable ties");
+        sort.Sort(centers, Matrix4x4.TRS(new Vector3(3,2,1),Quaternion.Euler(13,72,-4),new Vector3(1,-1,1)),new Vector3(3,2,1));
+        for (int i=0;i<4;i++) Check(sort.Order[i]==expected[i],"radial sort changed under rigid transform/reflection");
+        ValidatePly();
+        ValidateGpuProjection();
+        Debug.Log("[SparkValidation] All native Spark validation passed");
+    }
+
+    static void ValidatePly()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "vrphoto-spark-"+Guid.NewGuid().ToString("N")+".ply");
+        try
+        {
+            const string header = "ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nproperty float f_dc_0\nproperty float f_dc_1\nproperty float f_dc_2\nproperty float opacity\nproperty float scale_0\nproperty float scale_1\nproperty float scale_2\nproperty float rot_0\nproperty float rot_1\nproperty float rot_2\nproperty float rot_3\nend_header\n";
+            using (var stream = File.Create(path))
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(Encoding.ASCII.GetBytes(header));
+                foreach (float f in new float[] {1,2,3,0,0,0,0,-4,-4,-4,1,0,0,0}) writer.Write(f);
+            }
+            var data = SparkSplatData.ReadPly(path);
+            Check(data.Count==1 && math.all(data.Centers[0]==new float3(1,2,3)),"PLY coordinates were mirrored");
+            using (var stream = File.OpenWrite(path)) stream.SetLength(stream.Length-1);
+            bool rejected = false;
+            try { SparkSplatData.ReadPly(path); } catch (InvalidDataException) { rejected=true; }
+            Check(rejected,"truncated PLY accepted");
+        }
+        finally { File.Delete(path); }
+        Debug.Log("[SparkValidation] PLY coordinates, truncation, stable radial sort passed");
+    }
+
+    static void ValidateGpuProjection()
+    {
+        Check(SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null,"GPU validation requires a graphics device (omit -nographics)");
+        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        var cameraObject = new GameObject("Spark validation camera");
+        var camera = cameraObject.AddComponent<Camera>();
+        camera.enabled = false;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = Color.black;
+        camera.nearClipPlane = 0.01f;
+        camera.farClipPlane = 100;
+        camera.fieldOfView = 80;
+        camera.aspect = 4f/3f;
+        camera.allowHDR = false;
+        camera.allowMSAA = false;
+        camera.GetUniversalAdditionalCameraData().renderPostProcessing = false;
+        var sceneObject = new GameObject("Spark validation splat");
+        var renderer = sceneObject.AddComponent<SparkSplatRenderer>();
+        float3 center = new float3(0.21f,0.12f,2f);
+        var data = new SparkSplatData(new[] { SparkSplatData.Encode(center,new float3(-4),new float4(0,0,0,1),new float4(1)) },
+            new[] {center},new Bounds(center,Vector3.one));
+        var sorter = new SparkSorter(1);
+        sorter.Sort(data.Centers,Matrix4x4.identity,Vector3.zero);
+        renderer.SetScene(data,sorter,Resources.Load<Shader>("SparkNative"),false);
+        sceneObject.transform.localScale = new Vector3(1,-1,1);
+        var target = new RenderTexture(640,480,24,RenderTextureFormat.ARGB32);
+        target.Create();
+        var pixels = new Texture2D(640,480,TextureFormat.RGB24,false);
+        string output = Path.GetFullPath(Path.Combine(Application.dataPath,"../Builds/Pico/spark-validation"));
+        Directory.CreateDirectory(output);
+        try
+        {
+            int frame = 0;
+            foreach (float yaw in new[] {0f,-15f,15f})
+            foreach (float eye in new[] {-0.033f,0.033f})
+            {
+                camera.transform.SetPositionAndRotation(new Vector3(eye,0,0),Quaternion.Euler(0,yaw,0));
+                var projection = Matrix4x4.Perspective(80,4f/3f,0.01f,100);
+                projection.m02 = eye < 0 ? 0.06f : -0.06f;
+                camera.projectionMatrix = projection;
+                RenderPipeline.SubmitRenderRequest(camera,new UniversalRenderPipeline.SingleCameraRequest { destination=target });
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(0,0,640,480),0,0);
+                pixels.Apply();
+                RenderTexture.active = null;
+                double sum=0,xSum=0,ySum=0;
+                var colors = pixels.GetPixels32();
+                for(int i=0;i<colors.Length;i++)
+                {
+                    double weight=colors[i].r;
+                    sum+=weight; xSum+=(i%640+0.5)*weight; ySum+=(i/640+0.5)*weight;
+                }
+                File.WriteAllBytes(Path.Combine(output,$"eye-{frame++}.png"),pixels.EncodeToPNG());
+                Check(sum>100,"native shader rendered no visible splat");
+                Vector3 expected=camera.WorldToViewportPoint(sceneObject.transform.TransformPoint(center));
+                double dx=xSum/sum-expected.x*640,dy=ySum/sum-expected.y*480;
+                Check(Math.Abs(dx)<1.5 && Math.Abs(dy)<1.5,$"GPU world projection yaw={yaw},eye={eye}: error=({dx:F3},{dy:F3}) px");
+                Debug.Log($"[SparkValidation] GPU yaw={yaw}, eye={eye}, center error=({dx:F3},{dy:F3}) px");
+            }
+            string[] args = Environment.GetCommandLineArgs();
+            int plyArgument = Array.IndexOf(args,"-sparkPly");
+            if (plyArgument >= 0 && plyArgument+1 < args.Length)
+            {
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                var real = SparkSplatData.ReadPly(args[plyArgument+1]);
+                var realSort = new SparkSorter(real.Count);
+                Check(realSort.Sort(real.Centers,Matrix4x4.identity,Vector3.zero)==real.Count,"real scene lost splats");
+                renderer.SetScene(real,realSort,Resources.Load<Shader>("SparkNative"),false);
+                sceneObject.transform.localScale = new Vector3(1,-1,1);
+                camera.transform.SetPositionAndRotation(Vector3.zero,Quaternion.identity);
+                camera.ResetProjectionMatrix();
+                RenderPipeline.SubmitRenderRequest(camera,new UniversalRenderPipeline.SingleCameraRequest { destination=target });
+                RenderTexture.active = target;
+                pixels.ReadPixels(new Rect(0,0,640,480),0,0); pixels.Apply();
+                RenderTexture.active = null;
+                File.WriteAllBytes(Path.Combine(output,"sharp-scene.png"),pixels.EncodeToPNG());
+                Debug.Log($"[SparkValidation] Real SHARP scene: {real.Count:N0} splats, read/pack/sort/draw {timer.ElapsedMilliseconds} ms");
+            }
+        }
+        finally
+        {
+            renderer.Clear();
+            UnityEngine.Object.DestroyImmediate(sceneObject);
+            UnityEngine.Object.DestroyImmediate(cameraObject);
+            UnityEngine.Object.DestroyImmediate(pixels);
+            target.Release(); UnityEngine.Object.DestroyImmediate(target);
+        }
+    }
+}
