@@ -48,8 +48,8 @@ public sealed class VRPhotoCatalog : MonoBehaviour
 
     const string ServerPref = "vrphoto-server-origin";
     const string BudgetPref = "vrphoto-budget-index";
-    const int VisibleRows = 8;
-    const int GridColumns = 4;
+    const int VisibleRows = 6;
+    const int GridColumns = 3;
     const int ToolbarEntries = 4;
     const int ThumbnailCacheLimit = 32;
     const int KeyColumns = 10;
@@ -83,6 +83,10 @@ public sealed class VRPhotoCatalog : MonoBehaviour
     Text _help;
     Text[] _rowTexts;
     Image[] _rowBgs;
+    Image[] _rowBorders;
+    GameObject[] _rowSelections;
+    Text _position;
+    Sprite _roundedSprite;
     RawImage[] _rowPreviews;
     Text[] _rowGlyphs;
     Text[] _toolbarTexts;
@@ -117,6 +121,8 @@ public sealed class VRPhotoCatalog : MonoBehaviour
     float _poseLogUntil;
     int _savedMsaa;
     float _savedEyeScale;
+    float _savedRenderScale;
+    UniversalRenderPipelineAsset _menuPipeline;
     Quaternion _rendererBaseRotation = Quaternion.identity;
     Vector3 _rendererBaseScale = Vector3.one;
     RuntimeSplatLoader _loader;
@@ -156,6 +162,8 @@ public sealed class VRPhotoCatalog : MonoBehaviour
 
     void OnDestroy()
     {
+        RestoreMenuQuality();
+        if (_roundedSprite != null) { Destroy(_roundedSprite.texture); Destroy(_roundedSprite); }
         if (Instance == this) Instance = null;
         foreach (var request in _thumbnailRequests) request.Abort();
         foreach (var texture in _thumbnailCache.Values) Destroy(texture);
@@ -222,10 +230,15 @@ public sealed class VRPhotoCatalog : MonoBehaviour
         if ((Mathf.Abs(axis.y) > 0.5f || Mathf.Abs(axis.x) > 0.5f) &&
             _navigationCooldown <= 0 && _entries.Count > 0)
         {
-            int step = Mathf.Abs(axis.y) >= Mathf.Abs(axis.x)
-                ? (axis.y < 0 ? GridColumns : -GridColumns)
-                : (axis.x > 0 ? 1 : -1);
-            _selected = Mathf.Clamp(_selected + step, 0, _entries.Count - 1);
+            int next = _selected;
+            if (Mathf.Abs(axis.y) < Mathf.Abs(axis.x)) next += axis.x > 0 ? 1 : -1;
+            else if (_selected < ToolbarEntries)
+                next = axis.y < 0 && _entries.Count > ToolbarEntries
+                    ? ToolbarEntries + Mathf.Min(_selected, GridColumns - 1) : _selected;
+            else if (axis.y > 0 && _selected < ToolbarEntries + GridColumns)
+                next = _selected - ToolbarEntries;
+            else next += axis.y < 0 ? GridColumns : -GridColumns;
+            _selected = Mathf.Clamp(next, 0, _entries.Count - 1);
             if (_selected >= ToolbarEntries)
             {
                 int relative = _selected - ToolbarEntries;
@@ -338,6 +351,7 @@ public sealed class VRPhotoCatalog : MonoBehaviour
 
     void Show()
     {
+        if (IsOpen) return;
         if (IsServerSceneActive && _loader != null && _loader.targetRenderer != null)
         {
             _suspendedRenderer = _loader.targetRenderer;
@@ -353,7 +367,12 @@ public sealed class VRPhotoCatalog : MonoBehaviour
         var pipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
         if (pipeline != null)
         {
+            _menuPipeline = pipeline;
             _savedMsaa = pipeline.msaaSampleCount;
+            _savedRenderScale = pipeline.renderScale;
+            // URP writes this to XRDisplaySubsystem every frame, overriding
+            // eyeTextureResolutionScale. Give the catalog its own sharp target.
+            pipeline.renderScale = Mathf.Max(_savedRenderScale, 1.25f);
             pipeline.msaaSampleCount = 4;
         }
         var camera = Camera.main;
@@ -363,7 +382,7 @@ public sealed class VRPhotoCatalog : MonoBehaviour
             forward.y = 0;
             if (forward.sqrMagnitude < 0.001f) forward = Vector3.forward;
             forward.Normalize();
-            _panel.transform.position = camera.transform.position + forward * 1.15f;
+            _panel.transform.position = camera.transform.position + forward * 1.25f;
             _panel.transform.rotation = Quaternion.LookRotation(forward);
         }
         if (!XRSettings.isDeviceActive)
@@ -371,6 +390,9 @@ public sealed class VRPhotoCatalog : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
+        if (_mode == Mode.Browse && _library != null && !_busy)
+            _status.text = _scenes.Count + " photos" + (_library.pages > _library.page ? " · more load as you scroll" : "");
+        DrawEntries();
     }
 
     void Hide()
@@ -379,14 +401,7 @@ public sealed class VRPhotoCatalog : MonoBehaviour
         _panel.SetActive(false);
         if (IsServerSceneActive && _loader != null && _loader.targetRenderer != null)
             _loader.targetRenderer.m_SuspendRendering = false;
-        if (_savedEyeScale > 0f)
-        {
-            XRSettings.eyeTextureResolutionScale = _savedEyeScale;
-            _savedEyeScale = 0f;
-        }
-        var pipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
-        if (pipeline != null && _savedMsaa > 0)
-            pipeline.msaaSampleCount = _savedMsaa;
+        RestoreMenuQuality();
         if (_suspendedRenderer != null)
         {
             _suspendedRenderer.m_SuspendRendering = false;
@@ -396,6 +411,21 @@ public sealed class VRPhotoCatalog : MonoBehaviour
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+        }
+    }
+
+    void RestoreMenuQuality()
+    {
+        if (_savedEyeScale > 0f)
+        {
+            XRSettings.eyeTextureResolutionScale = _savedEyeScale;
+            _savedEyeScale = 0f;
+        }
+        if (_menuPipeline != null)
+        {
+            _menuPipeline.renderScale = _savedRenderScale;
+            _menuPipeline.msaaSampleCount = _savedMsaa;
+            _menuPipeline = null;
         }
     }
 
@@ -587,16 +617,17 @@ public sealed class VRPhotoCatalog : MonoBehaviour
                 if (_library.parent != null)
                     _entries.Add(new Entry { label = "← Parent folder", kind = EntryKind.Parent, path = _library.parent });
                 foreach (Folder folder in _library.folders)
-                    _entries.Add(new Entry { label = "▣  " + folder.name, kind = EntryKind.Folder, path = folder.path });
+                    _entries.Add(new Entry { label = folder.name, kind = EntryKind.Folder, path = folder.path });
                 foreach (SceneItem scene in _scenes)
-                    _entries.Add(new Entry { label = "▸  " + scene.name, kind = EntryKind.Scene, scene = scene });
+                    _entries.Add(new Entry { label = scene.name, kind = EntryKind.Scene, scene = scene });
                 if (_viewedSceneIndex >= 0 &&
                     (_viewedSceneIndex + 1 < _scenes.Count || _library.page < _library.pages))
                     _entries.Add(new Entry { label = "▶  Next photo", kind = EntryKind.NextScene });
             }
         }
         _selected = Mathf.Clamp(_selected, 0, Mathf.Max(0, _entries.Count - 1));
-        _scroll = Mathf.Clamp(_scroll, 0, Mathf.Max(0, _entries.Count - ToolbarEntries - VisibleRows));
+        int lastRow = Mathf.Max(0, (_entries.Count - ToolbarEntries - 1) / GridColumns);
+        _scroll = Mathf.Clamp(_scroll, 0, Mathf.Max(0, lastRow - 1) * GridColumns);
         _scroll = _scroll / GridColumns * GridColumns;
         DrawEntries();
     }
@@ -812,24 +843,28 @@ public sealed class VRPhotoCatalog : MonoBehaviour
             bool shown = !address && i < _entries.Count;
             _toolbarBgs[i].gameObject.SetActive(shown);
             if (!shown) continue;
+            bool pairing = _mode == Mode.Pair;
+            Rect(_toolbarBgs[i].gameObject, 36 + i * (pairing ? 574 : 286), -158, pairing ? 554 : 270, 46);
+            Rect(_toolbarTexts[i].gameObject, 10, 0, pairing ? 534 : 250, 46);
             _toolbarTexts[i].text = _entries[i].label;
             _toolbarBgs[i].color = i == _selected
-                ? new Color(0.14f, 0.48f, 0.75f, 1f)
-                : new Color(0.13f, 0.20f, 0.29f, 1f);
+                ? new Color(0.15f, 0.36f, 0.35f)
+                : new Color(0.10f, 0.14f, 0.18f);
         }
         for (int i = 0; i < _rowTexts.Length; i++)
         {
             int index = ToolbarEntries + _scroll + i;
             bool shown = _mode == Mode.Browse && index < _entries.Count;
-            _rowBgs[i].gameObject.SetActive(shown);
+            _rowBorders[i].gameObject.SetActive(shown);
             if (!shown) continue;
             Entry entry = _entries[index];
             _rowTexts[i].text = entry.label;
-            _rowBgs[i].color = index == _selected
-                ? new Color(0.15f, 0.46f, 0.73f, 1f)
-                : new Color(0.12f, 0.18f, 0.26f, 1f);
+            bool selected = index == _selected;
+            _rowBgs[i].color = selected ? new Color(0.12f, 0.22f, 0.27f) : new Color(0.085f, 0.11f, 0.15f);
+            _rowBorders[i].color = selected ? new Color(0.38f, 0.87f, 0.77f) : new Color(0.18f, 0.22f, 0.27f);
+            _rowSelections[i].SetActive(selected);
             string url = entry.kind == EntryKind.Scene && !string.IsNullOrEmpty(entry.scene.preview_url)
-                ? _origin + entry.scene.preview_url : null;
+                ? _origin + entry.scene.preview_url + (entry.scene.preview_url.Contains("?") ? "&" : "?") + "size=768" : null;
             _rowPreviews[i].gameObject.SetActive(false);
             _rowGlyphs[i].gameObject.SetActive(true);
             _rowGlyphs[i].text = entry.kind == EntryKind.Folder ? "FOLDER" :
@@ -855,15 +890,20 @@ public sealed class VRPhotoCatalog : MonoBehaviour
             _keyTexts[i].gameObject.SetActive(address);
             _keyBgs[i].gameObject.SetActive(address);
         }
-        _title.text = _mode == Mode.Pair ? "Verify VRPhoto server" : _mode == Mode.Address ? "Server address" :
-            "VRPhoto · " + (_library == null ? "Library" : string.IsNullOrEmpty(_library.path) ? "Library" : _library.path);
+        _title.text = _mode == Mode.Pair ? "Verify server" : _mode == Mode.Address ? "Server address" :
+            _library == null || string.IsNullOrEmpty(_library.path) ? "Photo library" : _library.path;
         _help.text = address ? "Stick: choose key · Trigger: type · B: back" :
-            "Stick: browse photos · Trigger: open · B: back · Y: show/hide · A: next photo";
+            "Stick  Browse     Trigger  Open     B  Back";
+        int count = Mathf.Max(0, _entries.Count - ToolbarEntries);
+        _position.text = _mode == Mode.Browse && count > 0
+            ? $"{_scroll + 1}–{Mathf.Min(_scroll + VisibleRows, count)} / {count}" +
+              (_library != null && _library.page < _library.pages ? "+" : "") : "";
         _detail.text = _mode == Mode.Pair && !string.IsNullOrEmpty(_candidateFingerprint)
             ? "Compare with 'Server certificate SHA-256' in the server log:\n\n" + GroupFingerprint(_candidateFingerprint)
             : address ? "https://" + _addressEntry : "";
-        Rect(_detail.gameObject, 30, address ? -125 : -220, 860, address ? 70 : 320);
+        Rect(_detail.gameObject, 36, address ? -158 : -270, 1128, address ? 70 : 450);
         _detail.gameObject.SetActive(_mode != Mode.Browse);
+        if (address) DrawKeyboard();
     }
 
     void DrawKeyboard()
@@ -877,7 +917,7 @@ public sealed class VRPhotoCatalog : MonoBehaviour
     {
         string requestedOrigin = _origin;
         _thumbnailLoading.Add(url);
-        using (var request = UnityWebRequestTexture.GetTexture(url))
+        using (var request = UnityWebRequest.Get(url))
         {
             _thumbnailRequests.Add(request);
             var handler = new VRPhotoCertificateHandler(VRPhotoCertificate.Saved(_origin));
@@ -889,7 +929,13 @@ public sealed class VRPhotoCatalog : MonoBehaviour
             if (CertificateChanged(handler)) yield break;
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Texture2D texture = DownloadHandlerTexture.GetContent(request);
+                // Mipmaps prevent shimmer when the panel is seen at an angle.
+                var texture = new Texture2D(2, 2, TextureFormat.RGB24, true);
+                if (!ImageConversion.LoadImage(texture, request.downloadHandler.data, true))
+                { Destroy(texture); yield break; }
+                texture.filterMode = FilterMode.Trilinear;
+                texture.anisoLevel = 4;
+                texture.wrapMode = TextureWrapMode.Clamp;
                 _thumbnailCache[url] = texture;
                 _thumbnailOrder.Enqueue(url);
                 while (_thumbnailOrder.Count > ThumbnailCacheLimit)
@@ -918,94 +964,144 @@ public sealed class VRPhotoCatalog : MonoBehaviour
 
     void BuildPanel()
     {
+        _roundedSprite = CreateRoundedSprite();
         _panel = new GameObject("VRPhoto Catalog", typeof(RectTransform));
         _panel.transform.SetParent(transform, false);
-        var canvas = _panel.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        var scaler = _panel.AddComponent<CanvasScaler>();
-        scaler.dynamicPixelsPerUnit = 5f;
-        var panelRect = _panel.GetComponent<RectTransform>();
-        panelRect.sizeDelta = new Vector2(920, 650);
-        _panel.transform.localScale = Vector3.one * 0.0018f;
-        var background = Child(_panel.transform, "Background");
-        Rect(background, 0, 0, 920, 650);
-        background.AddComponent<Image>().color = new Color(0.06f, 0.08f, 0.13f, 0.97f);
-        var accent = Child(background.transform, "Accent");
-        Rect(accent, 0, 0, 920, 6);
-        accent.AddComponent<Image>().color = new Color(0.26f, 0.69f, 0.94f, 1f);
-        _title = Label(background.transform, "Title", 31, 24, -18, 872, 44);
-        _status = Label(background.transform, "Status", 19, 24, -62, 872, 36);
-        _status.color = new Color(0.66f, 0.79f, 0.88f);
-        _help = Label(background.transform, "Help", 17, 20, -612, 880, 30);
-        _help.color = new Color(0.62f, 0.71f, 0.79f);
+        _panel.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        _panel.AddComponent<CanvasScaler>().dynamicPixelsPerUnit = 3f;
+        _panel.GetComponent<RectTransform>().sizeDelta = new Vector2(1200, 900);
+        _panel.transform.localScale = Vector3.one * 0.0015f;
+        var background = Surface(_panel.transform, "Background", 0, 0, 1200, 900,
+            new Color(0.035f, 0.05f, 0.07f));
+        var brand = Label(background.transform, "Brand", 20, 36, -22, 700, 28);
+        brand.text = "VRPHOTO  /  YOUR MOMENTS IN SPACE";
+        brand.color = new Color(0.38f, 0.87f, 0.77f);
+        _title = Label(background.transform, "Title", 42, 36, -56, 1128, 56);
+        _title.fontStyle = FontStyle.Bold;
+        _title.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _status = Label(background.transform, "Status", 23, 36, -112, 1128, 36);
+        _status.color = new Color(0.65f, 0.73f, 0.79f);
         _toolbarTexts = new Text[ToolbarEntries];
         _toolbarBgs = new Image[ToolbarEntries];
         for (int i = 0; i < ToolbarEntries; i++)
         {
-            var button = Child(background.transform, "Toolbar " + i);
-            Rect(button, 20 + i * 220, -107, 210, 39);
-            _toolbarBgs[i] = button.AddComponent<Image>();
-            _toolbarTexts[i] = Label(button.transform, "Text", 18, 7, 0, 196, 39);
+            var button = Surface(background.transform, "Toolbar " + i, 36 + i * 286, -158, 270, 46, Color.white);
+            _toolbarBgs[i] = button;
+            _toolbarTexts[i] = Label(button.transform, "Text", 24, 10, 0, 250, 46);
             _toolbarTexts[i].alignment = TextAnchor.MiddleCenter;
             _toolbarTexts[i].resizeTextForBestFit = true;
-            _toolbarTexts[i].resizeTextMinSize = 14;
-            _toolbarTexts[i].resizeTextMaxSize = 18;
+            _toolbarTexts[i].resizeTextMinSize = 20;
+            _toolbarTexts[i].resizeTextMaxSize = 24;
         }
         _rowTexts = new Text[VisibleRows];
         _rowBgs = new Image[VisibleRows];
+        _rowBorders = new Image[VisibleRows];
+        _rowSelections = new GameObject[VisibleRows];
         _rowPreviews = new RawImage[VisibleRows];
         _rowGlyphs = new Text[VisibleRows];
         for (int i = 0; i < VisibleRows; i++)
         {
-            var card = Child(background.transform, "Photo card " + i);
-            Rect(card, 20 + i % GridColumns * 220, -159 - i / GridColumns * 215, 210, 205);
-            _rowBgs[i] = card.AddComponent<Image>();
-            var picture = Child(card.transform, "Picture frame");
-            Rect(picture, 7, -7, 196, 140);
-            picture.AddComponent<Image>().color = new Color(0.07f, 0.11f, 0.17f, 1f);
+            var card = Surface(background.transform, "Photo card " + i,
+                36 + i % GridColumns * 382, -224 - i / GridColumns * 300, 364, 282, Color.white);
+            _rowBorders[i] = card;
+            var body = Surface(card.transform, "Body", 3, -3, 358, 276, Color.white);
+            _rowBgs[i] = body;
+            var picture = Surface(body.transform, "Picture frame", 7, -7, 344, 212,
+                new Color(0.022f, 0.03f, 0.04f));
             _rowPreviews[i] = Child(picture.transform, "Thumbnail").AddComponent<RawImage>();
-            Rect(_rowPreviews[i].gameObject, 0, 0, 196, 140);
+            Rect(_rowPreviews[i].gameObject, 0, 0, 344, 212);
+            _rowPreviews[i].rectTransform.pivot = new Vector2(0.5f, 0.5f);
             _rowPreviews[i].color = Color.white;
+            _rowPreviews[i].raycastTarget = false;
             var aspect = _rowPreviews[i].gameObject.AddComponent<AspectRatioFitter>();
             aspect.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-            _rowGlyphs[i] = Label(picture.transform, "Folder icon", 30, 0, 0, 196, 140);
+            _rowGlyphs[i] = Label(picture.transform, "Placeholder", 28, 0, 0, 344, 212);
             _rowGlyphs[i].alignment = TextAnchor.MiddleCenter;
-            _rowGlyphs[i].color = new Color(0.44f, 0.69f, 0.88f, 1f);
-            _rowTexts[i] = Label(card.transform, "Title", 20, 8, -151, 194, 46);
-            _rowTexts[i].horizontalOverflow = HorizontalWrapMode.Wrap;
+            _rowGlyphs[i].color = new Color(0.46f, 0.64f, 0.67f);
+            _rowTexts[i] = Label(body.transform, "Title", 29, 14, -224, 330, 44);
             _rowTexts[i].resizeTextForBestFit = true;
-            _rowTexts[i].resizeTextMinSize = 15;
-            _rowTexts[i].resizeTextMaxSize = 20;
+            _rowTexts[i].resizeTextMinSize = 23;
+            _rowTexts[i].resizeTextMaxSize = 29;
+            _rowTexts[i].horizontalOverflow = HorizontalWrapMode.Wrap;
+            var selection = Surface(picture.transform, "Selected", 234, -10, 100, 32,
+                new Color(0.38f, 0.87f, 0.77f));
+            _rowSelections[i] = selection.gameObject;
+            var open = Label(selection.transform, "Open", 19, 0, 0, 100, 32);
+            open.text = "OPEN";
+            open.fontStyle = FontStyle.Bold;
+            open.color = new Color(0.02f, 0.12f, 0.12f);
+            open.alignment = TextAnchor.MiddleCenter;
         }
-        _detail = Label(background.transform, "Details", 23, 30, -118, 860, 360);
+        var divider = Child(background.transform, "Footer line");
+        Rect(divider, 36, -834, 1128, 1);
+        divider.AddComponent<Image>().color = new Color(0.18f, 0.23f, 0.27f);
+        _help = Label(background.transform, "Help", 23, 36, -848, 860, 32);
+        _help.color = new Color(0.69f, 0.77f, 0.81f);
+        _position = Label(background.transform, "Position", 23, 906, -848, 258, 32);
+        _position.alignment = TextAnchor.MiddleRight;
+        _position.color = _help.color;
+        _detail = Label(background.transform, "Details", 30, 36, -270, 1128, 450);
         _detail.alignment = TextAnchor.UpperLeft;
         _detail.horizontalOverflow = HorizontalWrapMode.Wrap;
         _keyTexts = new Text[Keys.Length];
         _keyBgs = new Image[Keys.Length];
         for (int i = 0; i < Keys.Length; i++)
         {
-            var key = Child(background.transform, "Key " + i);
-            Rect(key, 30 + i % KeyColumns * 56, -206 - i / KeyColumns * 57, 52, 50);
-            _keyBgs[i] = key.AddComponent<Image>();
-            _keyTexts[i] = Label(key.transform, "Label", 20, 0, 0, 52, 50);
+            var key = Surface(background.transform, "Key " + i,
+                36 + i % KeyColumns * 113, -238 - i / KeyColumns * 100, 104, 88, Color.white);
+            _keyBgs[i] = key;
+            _keyTexts[i] = Label(key.transform, "Label", 32, 0, 0, 104, 88);
             _keyTexts[i].alignment = TextAnchor.MiddleCenter;
             _keyTexts[i].text = Keys[i];
         }
         _loadingPanel = new GameObject("VRPhoto Loading", typeof(RectTransform));
         _loadingPanel.transform.SetParent(transform, false);
-        var loadingCanvas = _loadingPanel.AddComponent<Canvas>();
-        loadingCanvas.renderMode = RenderMode.WorldSpace;
-        _loadingPanel.AddComponent<CanvasScaler>().dynamicPixelsPerUnit = 5f;
+        _loadingPanel.AddComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        _loadingPanel.AddComponent<CanvasScaler>().dynamicPixelsPerUnit = 3f;
         _loadingPanel.GetComponent<RectTransform>().sizeDelta = new Vector2(650, 120);
         _loadingPanel.transform.localScale = Vector3.one * 0.0015f;
-        var loadingBackground = Child(_loadingPanel.transform, "Background");
-        Rect(loadingBackground, 0, 0, 650, 120);
-        loadingBackground.AddComponent<Image>().color = new Color(0.06f, 0.08f, 0.13f, 0.96f);
+        var loadingBackground = Surface(_loadingPanel.transform, "Background", 0, 0, 650, 120,
+            new Color(0.035f, 0.05f, 0.07f));
         _loadingText = Label(loadingBackground.transform, "Message", 28, 22, -12, 606, 96);
         _loadingText.alignment = TextAnchor.MiddleCenter;
         _loadingText.horizontalOverflow = HorizontalWrapMode.Wrap;
         _loadingPanel.SetActive(false);
         _panel.SetActive(false);
+    }
+
+    Image Surface(Transform parent, string name, float x, float y, float width, float height, Color color)
+    {
+        var child = Child(parent, name);
+        Rect(child, x, y, width, height);
+        var image = child.AddComponent<Image>();
+        image.sprite = _roundedSprite;
+        image.type = Image.Type.Sliced;
+        image.color = color;
+        image.raycastTarget = false;
+        return image;
+    }
+
+    static Sprite CreateRoundedSprite()
+    {
+        const int size = 64;
+        const float radius = 14f;
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.name = "Catalog rounded corners";
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+        var pixels = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float dx = Mathf.Max(radius - (x + 0.5f), x + 0.5f - (size - radius), 0);
+            float dy = Mathf.Max(radius - (y + 0.5f), y + 0.5f - (size - radius), 0);
+            byte alpha = (byte)Mathf.RoundToInt(255 * Mathf.Clamp01(radius + 0.5f - Mathf.Sqrt(dx * dx + dy * dy)));
+            pixels[y * size + x] = new Color32(255, 255, 255, alpha);
+        }
+        texture.SetPixels32(pixels);
+        texture.Apply(false, true);
+        return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0,
+            SpriteMeshType.FullRect, new Vector4(radius, radius, radius, radius));
     }
 
     static GameObject Child(Transform parent, string name)
@@ -1029,6 +1125,8 @@ public sealed class VRPhotoCatalog : MonoBehaviour
         Rect(child, x, y, width, height);
         var label = child.AddComponent<Text>();
         label.font = _font;
+        label.raycastTarget = false;
+        label.supportRichText = false;
         label.fontSize = size;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;

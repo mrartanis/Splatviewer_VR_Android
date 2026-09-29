@@ -236,8 +236,12 @@ def create_app(library_name: str, budget: str = "full", renderer: str = "auto",
             except ValueError:
                 raise web.HTTPBadRequest(text="Invalid splat budget or unsupported PLY")
         if path.name == "preview.jpg" and request.query.get("thumb") == "1":
+            # Two bounded sizes: compact web cards and high-density headset UI.
+            size = request.query.get("size", "320")
+            if size not in ("320", "768"):
+                raise web.HTTPBadRequest(text="Unsupported thumbnail size")
             try:
-                path = await asyncio.to_thread(thumbnail, path, thumbnail_cache)
+                path = await asyncio.to_thread(thumbnail, path, thumbnail_cache, int(size))
             except OSError:
                 LOG.warning("Thumbnail generation failed for %s; serving preview", path, exc_info=True)
         response = web.FileResponse(path, headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"})

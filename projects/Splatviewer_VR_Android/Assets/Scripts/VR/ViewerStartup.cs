@@ -7,13 +7,14 @@ using System.Linq;
 using GaussianSplatting.Runtime;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.XR;
 
 [DefaultExecutionOrder(-1000)]
 public sealed class ViewerStartup : MonoBehaviour
 {
     const float StartupDelaySeconds = 0.5f;
-    const float QuestRenderScale = 0.80f;
+    const float DefaultRenderScale = 1f;
     const float QuestFoveatedRenderingLevel = 0f;
     const int QuestTargetFrameRate = 72;
     const int MaxDisplayOverrideFrames = 12;
@@ -100,9 +101,19 @@ public sealed class ViewerStartup : MonoBehaviour
         Application.targetFrameRate = QuestTargetFrameRate;
         QualitySettings.vSyncCount = 0;
 
-        float renderScale = VROptionsMenu.LoadSavedFloat(VROptionsMenu.PrefKeyRenderScale, QuestRenderScale);
+        // Upgrade the old Quest 80% default once. Later manual choices still persist.
+        const string resolutionVersion = "vrphoto-full-resolution-v1";
+        if (!PlayerPrefs.HasKey(resolutionVersion))
+        {
+            PlayerPrefs.SetFloat(VROptionsMenu.PrefKeyRenderScale, DefaultRenderScale);
+            PlayerPrefs.SetInt(resolutionVersion, 1);
+            PlayerPrefs.Save();
+        }
+        float renderScale = VROptionsMenu.LoadSavedFloat(VROptionsMenu.PrefKeyRenderScale, DefaultRenderScale);
         renderScale = Mathf.Clamp(renderScale, 0.5f, 1f);
         XRSettings.eyeTextureResolutionScale = renderScale;
+        if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset pipeline)
+            pipeline.renderScale = renderScale;
     }
 
     static void ApplyMobileSplatRendererOverrides()

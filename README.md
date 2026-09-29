@@ -9,6 +9,12 @@ at the capture viewpoint. Full quality (100% of the splats) is the default; High
 Medium, and Low are optional choices in the VR catalog. The original local file
 browser remains available from the catalog.
 
+Photos default to 100% XR render resolution; upgrading from the older Quest
+profile resets its 80% setting once. Subsequent manual resolution choices persist.
+The catalog uses a separate 125% render scale and 4x MSAA, with six larger cards,
+centered aspect-correct thumbnails (up to 768 px) and mipmapped filtering. Leaving
+the catalog restores the photo's resolution and antialiasing settings.
+
 Start the server on a computer reachable from the Pico over the LAN:
 
 ```powershell

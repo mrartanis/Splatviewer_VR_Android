@@ -92,6 +92,14 @@ def test_https_catalog_preview_range_unicode_and_large_stream(server, library):
     assert preview.read(2) == b"\xff\xd8"
     thumb = get(base + "/media/%C3%A9toile/preview.jpg?thumb=1", ctx)
     assert max(Image.open(BytesIO(thumb.read())).size) <= 320
+    sharp_thumb = get(base + "/media/%C3%A9toile/preview.jpg?thumb=1&size=768", ctx)
+    assert Image.open(BytesIO(sharp_thumb.read())).size == (600, 300)  # No enlargement of the 600px source.
+    Image.new("RGB", (1200, 600), "orange").save(library / "étoile" / "preview.jpg")
+    larger = get(base + "/media/%C3%A9toile/preview.jpg?thumb=1&size=768", ctx)
+    assert Image.open(BytesIO(larger.read())).size == (768, 384)
+    with pytest.raises(HTTPError) as invalid_size:
+        get(base + "/media/%C3%A9toile/preview.jpg?thumb=1&size=99999", ctx)
+    assert invalid_size.value.code == 400
     response = get(base + "/media/%C3%A9toile/scene.ply", ctx, {"Range": "bytes=0-31"})
     assert response.status == 206 and len(response.read()) == 32
     reduced = get(base + "/media/%C3%A9toile/scene.ply?budget=0.5", ctx)

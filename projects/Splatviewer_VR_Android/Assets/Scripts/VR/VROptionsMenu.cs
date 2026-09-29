@@ -127,7 +127,7 @@ public class VROptionsMenu : MonoBehaviour
     {
         _values[OPT_RENDER_SCALE] = LoadSavedFloat(PrefKeyRenderScale, XRSettings.eyeTextureResolutionScale);
         if (_values[OPT_RENDER_SCALE] < 0.01f)
-            _values[OPT_RENDER_SCALE] = 0.80f;
+            _values[OPT_RENDER_SCALE] = 1f;
 
         var renderer = FindAnyObjectByType<GaussianSplatRenderer>();
         _values[OPT_SH_ORDER] = LoadSavedFloat(PrefKeySHOrder, renderer != null ? renderer.m_SHOrder : 1);
