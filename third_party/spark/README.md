@@ -70,3 +70,11 @@ Pico session after installation (2026-09-29): both eyes logged 1204x1204,
 GPU time. The user confirmed the photo is now fixed in space and the frame rate
 feels higher, but reported discontinuities resembling tearing. Smooth 90 Hz
 rendering is not achieved by this baseline port.
+
+A subsequent on-device A/B/A trial precomputed a separate 24-byte covariance
+buffer per splat. Despite matching the rendered image (desktop mean absolute
+difference 0.00041/255), it was slower: median 18 FPS with the cache versus 22 FPS
+with the packed path; GPU time was about 49.74 ms versus 37.94 ms. The extra
+buffer and experimental shader branch were removed; the shipped APK uses the
+validated packed baseline. Raw measurements remain in the local build output
+`Builds/Pico/spark-covariance-benchmark.json`.
