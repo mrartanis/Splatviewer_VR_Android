@@ -70,6 +70,7 @@ namespace GaussianSplatting.Runtime
             {
                 internal SparkSplatRenderer[] Renderers;
                 internal Matrix4x4[] PreviousVP;
+                internal Matrix4x4[] View, Projection, InverseVP;
                 internal int Width, Height;
                 internal float MotionY;
             }
@@ -100,14 +101,24 @@ namespace GaussianSplatting.Runtime
                 info.format = descriptor.depthStencilFormat;
                 var depth = graph.ImportTexture(_depth, info, keep);
                 var current = new Matrix4x4[2];
+                var view = new Matrix4x4[2];
+                var projection = new Matrix4x4[2];
+                var inverse = new Matrix4x4[2];
                 for (int eye = 0; eye < 2; eye++)
-                    current[eye] = GL.GetGPUProjectionMatrix(camera.xr.GetProjMatrix(eye), false) * camera.GetViewMatrix(eye);
+                {
+                    view[eye] = camera.GetViewMatrix(eye);
+                    // Match URP XRDepthMotionPass, independent of the color target Y flip.
+                    projection[eye] = GL.GetGPUProjectionMatrix(camera.xr.GetProjMatrix(eye), false);
+                    current[eye] = projection[eye] * view[eye];
+                    inverse[eye] = current[eye].inverse;
+                }
                 var previous = _lastFrame == Time.frameCount - 1 ? _lastVP : current;
                 _lastVP = current;
                 _lastFrame = Time.frameCount;
                 using var builder = graph.AddRasterRenderPass<PassData>("Spark XR motion and depth", out var data);
                 data.Renderers = renderers.ToArray();
                 data.PreviousVP = previous;
+                data.View = view; data.Projection = projection; data.InverseVP = inverse;
                 data.Width = camera.cameraTargetDescriptor.width;
                 data.Height = camera.cameraTargetDescriptor.height;
                 data.MotionY = camera.xr.spaceWarpRightHandedNDC ? -1f : 1f;
@@ -117,7 +128,8 @@ namespace GaussianSplatting.Runtime
                 builder.SetRenderFunc(static (PassData pass, RasterGraphContext context) =>
                 {
                     foreach (var renderer in pass.Renderers)
-                        if (renderer != null) renderer.DrawMotion(context.cmd, pass.Width, pass.Height, pass.PreviousVP, pass.MotionY);
+                        if (renderer != null) renderer.DrawMotion(context.cmd, pass.Width, pass.Height,
+                            pass.PreviousVP, pass.View, pass.Projection, pass.InverseVP, pass.MotionY);
                 });
             }
             public void Release() { _motion?.Release(); _depth?.Release(); _motion = _depth = null; }

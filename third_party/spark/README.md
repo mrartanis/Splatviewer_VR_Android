@@ -104,3 +104,14 @@ Application FPS was initially about 15 and dropped further, with GPU time around
 from an interactive session, not a controlled benchmark. The user reported strong
 artifacts when looking at the photo, fewer when looking down, and no clear gain
 in smoothness. AppSW is therefore not recommended for normal viewing yet.
+
+The follow-up found a projection-convention bug in our motion pass: the previous
+frame used the XR unflipped GPU projection, while the current frame inherited
+color-target matrices (potentially Y-flipped). Reproducing the actual XR convention
+in the desktop test exposed nonzero vertical motion even for a stationary camera.
+The pass now uses explicit per-eye view/projection/inverse matrices throughout,
+following URP's XRDepthMotionPass, independently of color-target globals. GPU
+checks cover zero motion over the entire Gaussian footprint, translations along
+all three axes in both directions, and yaw/pitch turns. These pass; improvement
+in the Pico artifacts still requires the user's follow-up test. The original
+color projection and 100% splat budget are unchanged.

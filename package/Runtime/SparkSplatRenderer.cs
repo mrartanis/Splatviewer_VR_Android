@@ -152,12 +152,16 @@ namespace GaussianSplatting.Runtime
         }
 
 #if GS_ENABLE_URP
-        internal void DrawMotion(RasterCommandBuffer command, int width, int height, Matrix4x4[] previousVP, float motionY)
+        internal void DrawMotion(RasterCommandBuffer command, int width, int height, Matrix4x4[] previousVP,
+            Matrix4x4[] view, Matrix4x4[] projection, Matrix4x4[] inverseVP, float motionY)
         {
             if (!Visible || !MotionRequested || _drawCount == 0) return;
             _properties.SetMatrix("_SparkLocalToWorld", transform.localToWorldMatrix);
             _properties.SetMatrix("_SparkPreviousFromCurrent", _previousModel * transform.worldToLocalMatrix);
             _properties.SetMatrixArray("_SparkPreviousVP", previousVP);
+            _properties.SetMatrixArray("_SparkMotionView", view);
+            _properties.SetMatrixArray("_SparkMotionProjection", projection);
+            _properties.SetMatrixArray("_SparkMotionInverseVP", inverseVP);
             _properties.SetFloat("_SparkMotionY", motionY);
             _properties.SetVector("_SparkRenderSize", new Vector4(width, height, 0, 0));
             command.DrawProcedural(_quad, Matrix4x4.identity, _material, 1, MeshTopology.Triangles, 6, _drawCount, _properties);

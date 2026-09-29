@@ -61,7 +61,7 @@ public static class SparkNativeValidation
         camera.aspect = 4f / 3f;
         var target = new RenderTexture(640, 480, 0, RenderTextureFormat.ARGBFloat);
         target.Create();
-        var pixels = new Texture2D(1, 1, TextureFormat.RGBAFloat, false);
+        var pixels = new Texture2D(640, 480, TextureFormat.RGBAFloat, false);
         var material = new Material(Resources.Load<Shader>("SparkNative"));
         using var packed = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 16);
         using var order = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4);
@@ -75,7 +75,14 @@ public static class SparkNativeValidation
         props.SetMatrix("_SparkPreviousFromCurrent", Matrix4x4.identity);
         props.SetVector("_SparkRenderSize", new Vector4(640,480,0,0));
         props.SetFloat("_SparkMotionY", 1);
-        Matrix4x4 projection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, true);
+        // XRDepthMotionPass uses renderIntoTexture=false even for its swapchain.
+        // The motion shader must not mix this with the color target's Y flip.
+        Matrix4x4 projection = GL.GetGPUProjectionMatrix(camera.projectionMatrix, false);
+        Matrix4x4 currentView = camera.worldToCameraMatrix;
+        Matrix4x4 currentVP = projection * currentView;
+        props.SetMatrixArray("_SparkMotionView", new[] { currentView, currentView });
+        props.SetMatrixArray("_SparkMotionProjection", new[] { projection, projection });
+        props.SetMatrixArray("_SparkMotionInverseVP", new[] { currentVP.inverse, currentVP.inverse });
         var rendererData = AssetDatabase.LoadAssetAtPath<UniversalRendererData>("Assets/Settings/Medium_PipelineAsset_ForwardRenderer.asset");
         var feature = ScriptableObject.CreateInstance<SparkMotionValidationFeature>();
         feature.Material = material; feature.Properties = props; feature.Quad = quad;
@@ -84,22 +91,42 @@ public static class SparkNativeValidation
         var dummy = new RenderTexture(640,480,24); dummy.Create();
         try
         {
-            foreach (float oldCameraX in new[] { 0f, 0.1f, -0.1f })
+            var translations = new[] { Vector3.zero, Vector3.right * .1f, Vector3.left * .1f,
+                Vector3.up * .1f, Vector3.down * .1f, Vector3.forward * .1f, Vector3.back * .1f };
+            for (int test = 0; test < translations.Length + 4; test++)
             {
-                camera.transform.position = new Vector3(oldCameraX,0,0);
+                Vector3 oldPosition = test < translations.Length ? translations[test] : Vector3.zero;
+                Vector3 oldAngles = test < translations.Length ? Vector3.zero :
+                    new[] { new Vector3(0,10,0), new Vector3(0,-10,0), new Vector3(10,0,0), new Vector3(-10,0,0) }[test-translations.Length];
+                camera.transform.SetPositionAndRotation(oldPosition, Quaternion.Euler(oldAngles));
                 Matrix4x4 previousVP = projection * camera.worldToCameraMatrix;
                 props.SetMatrixArray("_SparkPreviousVP", new[] { previousVP, previousVP });
-                camera.transform.position = Vector3.zero;
+                camera.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                 RenderPipeline.SubmitRenderRequest(camera, new UniversalRenderPipeline.SingleCameraRequest { destination=dummy });
                 RenderTexture.active = target;
-                pixels.ReadPixels(new Rect(320,240,1,1),0,0); pixels.Apply();
+                pixels.ReadPixels(new Rect(0,0,640,480),0,0); pixels.Apply();
                 RenderTexture.active = null;
-                Color motion = pixels.GetPixel(0,0);
-                float expected = projection.m00 * oldCameraX / 2;
-                Check(Mathf.Abs(motion.r-expected)<0.002f && Mathf.Abs(motion.g)<0.002f && Mathf.Abs(motion.b)<0.002f,
-                    $"motion vector sign/magnitude: {motion} != {expected}");
+                Color motion = pixels.GetPixel(320,240);
+                Vector4 point = new Vector4(0,0,2,1);
+                Vector4 curr = currentVP * point, prev = previousVP * point;
+                Vector4 expected = curr / curr.w - prev / prev.w;
+                Check(motion.a > .5f && Mathf.Abs(motion.r-expected.x)<0.002f && Mathf.Abs(motion.g-expected.y)<0.002f && Mathf.Abs(motion.b-expected.z)<0.002f,
+                    $"motion case {test}: {motion} != {expected}");
+                if (test == 0)
+                {
+                    // Check every covered pixel, not just the optical center where a Y flip is hidden.
+                    int covered = 0;
+                    foreach (Color pixel in pixels.GetPixels())
+                        if (pixel.a > .5f)
+                        {
+                            ++covered;
+                            Check(Mathf.Max(Mathf.Abs(pixel.r), Mathf.Abs(pixel.g), Mathf.Abs(pixel.b)) < .0001f,
+                                $"stationary splat has spurious motion: {pixel}");
+                        }
+                    Check(covered > 100, "motion coverage missing");
+                }
             }
-            Debug.Log("[SparkValidation] GPU motion pass: stationary and both camera translation directions passed");
+            Debug.Log("[SparkValidation] GPU motion: stationary full footprint, six translations, yaw and pitch passed with XR projection convention");
         }
         finally
         {

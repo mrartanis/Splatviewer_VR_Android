@@ -8,6 +8,9 @@
             float4 _SparkRenderSize;
             #if defined(SPARK_MOTION)
             float4x4 _SparkPreviousVP[2];
+            float4x4 _SparkMotionView[2];
+            float4x4 _SparkMotionProjection[2];
+            float4x4 _SparkMotionInverseVP[2];
             float4x4 _SparkPreviousFromCurrent;
             float _SparkMotionY;
             #endif
@@ -81,17 +84,32 @@
                 float4 q, color;
                 Decode(packed, center, scale, q, color);
                 float3 worldCenter = mul(_SparkLocalToWorld, float4(center,1)).xyz;
+                #if defined(SPARK_MOTION)
+                uint eye = 0;
+                #if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
+                    eye = unity_StereoEyeIndex;
+                #endif
+                // XR motion/depth uses its own unflipped projection, as URP does.
+                // Color-target builtins may be flipped and must not enter this path.
+                float4x4 viewMatrix = _SparkMotionView[eye];
+                float4x4 projectionMatrix = _SparkMotionProjection[eye];
+                float3 viewCenter = mul(viewMatrix, float4(worldCenter,1)).xyz;
+                float4 clipCenter = mul(projectionMatrix, float4(viewCenter,1));
+                #else
+                float4x4 viewMatrix = UNITY_MATRIX_V;
+                float4x4 projectionMatrix = UNITY_MATRIX_P;
                 float3 viewCenter = TransformWorldToView(worldCenter);
                 float4 clipCenter = TransformWorldToHClip(worldCenter);
+                #endif
                 if (viewCenter.z >= -_ProjectionParams.y || viewCenter.z <= -_ProjectionParams.z ||
                     abs(clipCenter.x) > 1.4 * clipCenter.w || abs(clipCenter.y) > 1.4 * clipCenter.w)
                     return output;
 
                 // General basis also handles the OpenCV Y reflection.
-                float3x3 viewBasis = mul((float3x3)UNITY_MATRIX_V, (float3x3)_SparkLocalToWorld);
+                float3x3 viewBasis = mul((float3x3)viewMatrix, (float3x3)_SparkLocalToWorld);
                 float3x3 RS = mul(viewBasis, RotationScale(q, scale));
                 float3x3 cov3D = mul(RS, transpose(RS));
-                float2 focal = 0.5 * _SparkRenderSize.xy * float2(UNITY_MATRIX_P._m00, UNITY_MATRIX_P._m11);
+                float2 focal = 0.5 * _SparkRenderSize.xy * float2(projectionMatrix._m00, projectionMatrix._m11);
                 float invZ = rcp(viewCenter.z);
                 float2 J1 = focal * invZ;
                 float2 J2 = -(J1 * viewCenter.xy) * invZ;
@@ -122,13 +140,9 @@
                 output.positionCS.xy += (2.0 / _SparkRenderSize.xy) * offset * clipCenter.w;
                 #if defined(SPARK_MOTION)
                 output.currentClip = output.positionCS;
-                float4 worldCorner = mul(UNITY_MATRIX_I_VP, output.positionCS);
+                float4 worldCorner = mul(_SparkMotionInverseVP[eye], output.positionCS);
                 worldCorner /= worldCorner.w;
                 float4 previousWorld = mul(_SparkPreviousFromCurrent, worldCorner);
-                uint eye = 0;
-                #if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
-                    eye = unity_StereoEyeIndex;
-                #endif
                 output.previousClip = mul(_SparkPreviousVP[eye], previousWorld);
                 #endif
                 output.splatUV = corner*MaxStdDev;
@@ -149,7 +163,7 @@
                 float3 motion = input.currentClip.xyz / input.currentClip.w -
                     input.previousClip.xyz / input.previousClip.w;
                 motion.y *= _SparkMotionY;
-                return float4(motion, 0);
+                return float4(motion, 1);
                 #else
                 clip(alpha-MinAlpha);
                 half3 rgb = input.color.rgb;
